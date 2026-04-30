@@ -1,0 +1,94 @@
+{
+  "registration_filenames": [
+    "114學年度足球⚽️系際盃 (回覆).xlsx",
+    "114學年度足球系際盃 (回覆).xlsx"
+  ],
+  "template_filenames": [
+    "113系際盃賽程及裁判表_公開版.xlsx"
+  ],
+  "team_column": "科系",
+  "min_team_count": 2,
+  "default_group_count": 4,
+  "max_group_count": 26,
+  "default_advance_per_group": 1,
+  "default_wildcard_count": 0,
+  "template_schedule_team_count": 12,
+  "template_schedule_group_count": 4,
+  "schedule_filename": "114學年度足球系際盃_賽程表.xlsx",
+  "pdf_filename": "114學年度足球系際盃_抽籤隨機性說明.pdf",
+  "schedule_title": "114學年度足球系際盃賽程表",
+  "group_label_format": "{group}組",
+  "semifinal_labels": {
+    "D14": "A1",
+    "E14": "C1",
+    "I14": "B1",
+    "J14": "D1"
+  },
+  "final_labels": {
+    "B17": 15,
+    "G17": 16,
+    "D17": "13L",
+    "E17": "14L",
+    "I17": "13W",
+    "J17": "14W"
+  },
+  "clear_cells": [
+    "B15",
+    "D15",
+    "E15",
+    "G15",
+    "I15",
+    "J15"
+  ],
+  "reserve_cells": [
+    "B18",
+    "D18",
+    "E18",
+    "G18",
+    "I18",
+    "J18"
+  ],
+  "pdf_title": "114學年度足球系際盃抽籤隨機性說明",
+  "fields": [
+    "甲",
+    "乙"
+  ],
+  "match_duration_minutes": 45,
+  "max_matches_per_team_per_day": 3,
+  "final_preferred_start": "14:00",
+  "default_day1_latest_end": "16:45",
+  "default_day2_latest_end": "15:45",
+  "day_slots": {
+    "DAY1": [
+      "09:00",
+      "10:00",
+      "11:00",
+      "14:00",
+      "15:00",
+      "16:00"
+    ],
+    "DAY2": [
+      "10:00",
+      "11:00",
+      "14:00",
+      "15:00"
+    ]
+  },
+  "latest_end_options": {
+    "DAY1": [
+      "16:45",
+      "17:45",
+      "18:45",
+      "19:45",
+      "20:45"
+    ],
+    "DAY2": [
+      "15:45",
+      "16:45",
+      "17:45",
+      "18:45",
+      "19:45",
+      "20:45"
+    ]
+  }
+}
