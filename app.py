@@ -35,239 +35,767 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>足球系際盃抽籤工具</title>
+  <title>Interdept Cup Draw Studio</title>
   <style>
     :root {
-      --bg: #f4efe4;
-      --panel: #fffdf8;
-      --ink: #173026;
-      --muted: #62756d;
-      --line: #d9ceb8;
-      --accent: #206d50;
-      --accent-dark: #134935;
-      --danger: #8a4738;
-      --gold: #c38a2e;
-      --shadow: rgba(31, 59, 45, 0.10);
+      --bg: #050505;
+      --bg-soft: #0d0d0d;
+      --ink: #f5f2ea;
+      --muted: #9b978f;
+      --line: rgba(245, 242, 234, 0.14);
+      --line-strong: rgba(245, 242, 234, 0.26);
+      --panel: rgba(15, 15, 15, 0.72);
+      --panel-solid: #101010;
+      --accent: #d6ff63;
+      --accent-2: #9ae6ff;
+      --danger: #ff765f;
+      --shadow: 0 34px 110px rgba(0, 0, 0, 0.5);
+      --font-display: "Bahnschrift", "Arial Narrow", "Microsoft JhengHei", sans-serif;
+      --font-ui: "Microsoft JhengHei", "Noto Sans TC", sans-serif;
     }
+
     * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
     body {
       margin: 0;
-      font-family: "Microsoft JhengHei", "Noto Sans TC", sans-serif;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 8% 4%, rgba(255,255,255,0.9), transparent 26%),
-        radial-gradient(circle at 92% 10%, rgba(32,109,80,0.14), transparent 24%),
-        linear-gradient(140deg, #eee4d1 0%, #fbf7ed 46%, #e7f0e8 100%);
       min-height: 100vh;
+      color: var(--ink);
+      font-family: var(--font-ui);
+      background: var(--bg);
+      overflow-x: hidden;
     }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: -20%;
+      z-index: -3;
+      pointer-events: none;
+    }
+
+    body::before {
+      background:
+        radial-gradient(circle at 16% 12%, rgba(214, 255, 99, 0.18), transparent 22%),
+        radial-gradient(circle at 86% 6%, rgba(154, 230, 255, 0.13), transparent 24%),
+        radial-gradient(circle at 72% 78%, rgba(255, 255, 255, 0.08), transparent 28%),
+        linear-gradient(135deg, #050505 0%, #0e0e0e 46%, #020202 100%);
+      animation: ambientShift 16s ease-in-out infinite alternate;
+    }
+
+    body::after {
+      opacity: 0.22;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px);
+      background-size: 84px 84px;
+      transform: perspective(820px) rotateX(64deg) translateY(-16%);
+      transform-origin: top;
+      animation: gridDrift 18s linear infinite;
+    }
+
+    a { color: inherit; }
+
+    .grain {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      opacity: 0.23;
+      background-image:
+        repeating-radial-gradient(circle at 8% 18%, rgba(255,255,255,0.15) 0 1px, transparent 1px 4px);
+      mix-blend-mode: overlay;
+    }
+
+    .runway {
+      position: fixed;
+      inset: auto -10% 0;
+      height: 36vh;
+      z-index: -2;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, transparent 0 48%, rgba(214,255,99,0.18) 49%, transparent 51% 100%),
+        linear-gradient(to top, rgba(214,255,99,0.14), transparent 72%);
+      clip-path: polygon(40% 0, 60% 0, 100% 100%, 0 100%);
+      filter: blur(0.2px);
+      opacity: 0.9;
+    }
+
     .shell {
-      max-width: 1160px;
+      width: min(1180px, calc(100% - 34px));
       margin: 0 auto;
-      padding: 42px 20px 58px;
+      padding: 22px 0 72px;
     }
-    h1 {
-      margin: 0 0 10px;
-      font-size: clamp(1.8rem, 4vw, 3rem);
-      letter-spacing: 0.04em;
-    }
-    .lead {
-      max-width: 880px;
-      margin: 0 0 24px;
-      color: var(--muted);
-      line-height: 1.75;
-    }
-    .layout {
-      display: grid;
-      grid-template-columns: minmax(300px, 390px) 1fr;
-      gap: 20px;
-      align-items: start;
-    }
-    .panel {
-      background: rgba(255, 253, 248, 0.94);
-      border: 1px solid rgba(217, 206, 184, 0.85);
-      border-radius: 22px;
-      padding: 22px;
-      box-shadow: 0 18px 44px var(--shadow);
-      backdrop-filter: blur(10px);
-    }
-    .panel h2 {
-      margin: 0 0 14px;
-      font-size: 1.25rem;
-    }
-    .form-grid {
-      display: grid;
-      gap: 14px;
-    }
-    label {
-      display: grid;
-      gap: 7px;
-      color: var(--muted);
-      font-weight: 700;
-      font-size: 0.95rem;
-    }
-    input[type="file"],
-    input[type="number"],
-    select {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: #fffaf0;
-      color: var(--ink);
-      padding: 11px 12px;
-      font: inherit;
-    }
-    input[type="file"] { cursor: pointer; }
-    .checkbox-row {
+
+    .nav {
       display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    .checkbox-row label {
-      display: inline-flex;
-      flex-direction: row;
       align-items: center;
-      gap: 7px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 9px 13px;
-      background: #fffaf0;
-      color: var(--ink);
-      font-weight: 700;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 72px;
     }
-    .hint,
-    .note {
+
+    .brand {
+      display: inline-grid;
+      gap: 2px;
+      text-decoration: none;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      font-family: var(--font-display);
+      font-size: 0.82rem;
+      font-weight: 800;
+    }
+
+    .brand span:last-child {
       color: var(--muted);
-      font-size: 0.92rem;
-      line-height: 1.6;
+      font-size: 0.72rem;
+      letter-spacing: 0.34em;
     }
-    .actions {
-      margin-top: 18px;
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      transition: color 180ms ease;
+    }
+
+    .nav-links a:hover { color: var(--ink); }
+
+    .hero {
+      min-height: 72vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.78fr);
+      gap: clamp(28px, 5vw, 74px);
+      align-items: center;
+      padding: clamp(42px, 7vw, 92px) 0;
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 24px;
+      animation: riseIn 760ms ease both;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 820px;
+      font-family: var(--font-display);
+      font-size: clamp(3.8rem, 12vw, 9.8rem);
+      line-height: 0.84;
+      letter-spacing: -0.08em;
+      text-transform: uppercase;
+    }
+
+    .lead {
+      max-width: 620px;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.7vw, 1.2rem);
+      line-height: 1.9;
+    }
+
+    .hero-actions,
+    .actions,
+    .downloads {
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
       align-items: center;
     }
+
+    .button,
     button,
     .button-link {
-      border: 0;
+      position: relative;
+      isolation: isolate;
+      border: 1px solid var(--line-strong);
       border-radius: 999px;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
-      color: white;
-      padding: 12px 22px;
-      font-size: 1rem;
-      font-weight: 800;
-      cursor: pointer;
-      box-shadow: 0 13px 25px rgba(32, 109, 80, 0.18);
-      text-decoration: none;
+      min-height: 48px;
+      padding: 13px 22px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      gap: 10px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.055);
+      font: 800 0.78rem/1 var(--font-ui);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      text-decoration: none;
+      cursor: pointer;
+      overflow: hidden;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
     }
+
+    .button::before,
+    button::before,
+    .button-link::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: linear-gradient(110deg, transparent, rgba(255,255,255,0.18), transparent);
+      transform: translateX(-120%);
+      transition: transform 520ms ease;
+    }
+
+    .button:hover,
     button:hover,
-    .button-link:hover { transform: translateY(-1px); }
-    .button-secondary {
-      background: linear-gradient(135deg, var(--danger) 0%, #6d3026 100%);
-      box-shadow: 0 13px 25px rgba(109, 48, 38, 0.16);
+    .button-link:hover {
+      transform: translateY(-2px);
+      border-color: rgba(214,255,99,0.64);
+      background: rgba(255,255,255,0.09);
     }
+
+    .button:hover::before,
+    button:hover::before,
+    .button-link:hover::before {
+      transform: translateX(120%);
+    }
+
+    .button-primary,
+    button[type="submit"] {
+      color: #080808;
+      border-color: transparent;
+      background: var(--accent);
+      box-shadow: 0 18px 46px rgba(214,255,99,0.22);
+    }
+
+    .button-secondary {
+      color: #fff;
+      background: rgba(255, 118, 95, 0.16);
+      border-color: rgba(255, 118, 95, 0.36);
+    }
+
+    .hero-card {
+      position: relative;
+      min-height: 520px;
+      border: 1px solid var(--line);
+      border-radius: 34px;
+      overflow: hidden;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02)),
+        radial-gradient(circle at 50% 20%, rgba(214,255,99,0.22), transparent 28%),
+        #101010;
+      box-shadow: var(--shadow);
+      animation: floatCard 7s ease-in-out infinite;
+    }
+
+    .hero-card::before {
+      content: "";
+      position: absolute;
+      inset: 8%;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background:
+        radial-gradient(circle, transparent 0 36%, rgba(214,255,99,0.08) 37% 38%, transparent 39%),
+        conic-gradient(from 180deg, transparent, rgba(214,255,99,0.22), transparent, rgba(154,230,255,0.18), transparent);
+      filter: blur(0.2px);
+      animation: spinSlow 18s linear infinite;
+    }
+
+    .hero-card::after {
+      content: "SYSTEM RANDOM";
+      position: absolute;
+      left: 28px;
+      right: 28px;
+      bottom: 28px;
+      padding: 22px;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 22px;
+      background: rgba(0,0,0,0.52);
+      backdrop-filter: blur(18px);
+      font: 800 1.65rem/1 var(--font-display);
+      letter-spacing: -0.04em;
+    }
+
+    .spec-strip {
+      position: absolute;
+      top: 28px;
+      left: 28px;
+      right: 28px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .ball-orbit {
+      position: absolute;
+      left: 50%;
+      top: 48%;
+      width: 164px;
+      height: 164px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 38% 30%, #fff 0 7%, transparent 8%),
+        radial-gradient(circle at 60% 62%, rgba(214,255,99,0.92) 0 9%, transparent 10%),
+        linear-gradient(145deg, #f7f3e7, #676767 58%, #111);
+      box-shadow: 0 28px 82px rgba(0,0,0,0.54), 0 0 70px rgba(214,255,99,0.28);
+    }
+
+    .ticker {
+      border-block: 1px solid var(--line);
+      overflow: hidden;
+      color: var(--muted);
+      font-family: var(--font-display);
+      font-size: clamp(1.4rem, 4vw, 3.8rem);
+      line-height: 1;
+      letter-spacing: -0.05em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      padding: 18px 0;
+    }
+
+    .ticker-track {
+      display: inline-flex;
+      gap: 34px;
+      min-width: max-content;
+      animation: marquee 24s linear infinite;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(320px, 0.86fr) minmax(0, 1.14fr);
+      gap: 18px;
+      padding-top: 24px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(22px);
+      overflow: hidden;
+    }
+
+    .panel-inner { padding: clamp(20px, 3vw, 30px); }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+      margin-bottom: 22px;
+    }
+
+    .panel-kicker {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      font-weight: 900;
+    }
+
+    h2 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(1.9rem, 3vw, 3.2rem);
+      letter-spacing: -0.055em;
+      line-height: 0.96;
+      text-transform: uppercase;
+    }
+
+    .note,
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 0.92rem;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    label,
+    .field-label {
+      display: grid;
+      gap: 8px;
+      color: var(--ink);
+      font-size: 0.76rem;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    input[type="file"],
+    input[type="number"],
+    select {
+      width: 100%;
+      min-height: 52px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.055);
+      color: var(--ink);
+      padding: 13px 15px;
+      font: 700 1rem/1.2 var(--font-ui);
+      outline: none;
+      transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+    }
+
+    select option {
+      color: #101010;
+      background: #f5f2ea;
+    }
+
+    input[type="file"] { cursor: pointer; }
+
+    input:focus,
+    select:focus {
+      border-color: rgba(214,255,99,0.66);
+      background: rgba(255,255,255,0.08);
+      box-shadow: 0 0 0 4px rgba(214,255,99,0.1);
+    }
+
+    .checkbox-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .checkbox-row label {
+      display: flex;
+      min-height: 48px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      cursor: pointer;
+      transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+    }
+
+    .checkbox-row label:hover {
+      transform: translateY(-1px);
+      border-color: rgba(214,255,99,0.54);
+      background: rgba(214,255,99,0.1);
+    }
+
+    .checkbox-row input { accent-color: var(--accent); }
+
     .messages {
       display: grid;
       gap: 10px;
       margin: 0 0 18px;
     }
+
     .message {
-      padding: 12px 14px;
-      border-radius: 14px;
-      background: #fff7dd;
-      border: 1px solid rgba(195, 138, 46, 0.35);
-      color: #60461b;
-      line-height: 1.55;
+      border: 1px solid rgba(214,255,99,0.28);
+      border-radius: 18px;
+      padding: 13px 16px;
+      background: rgba(214,255,99,0.09);
+      color: var(--ink);
+      line-height: 1.6;
+      backdrop-filter: blur(16px);
     }
+
     .message.error {
-      background: #fff0eb;
-      border-color: rgba(138, 71, 56, 0.35);
-      color: #6d3026;
+      border-color: rgba(255,118,95,0.36);
+      background: rgba(255,118,95,0.11);
     }
+
+    .message.success {
+      border-color: rgba(214,255,99,0.36);
+    }
+
     .team-list {
-      margin: 12px 0 0;
-      padding-left: 1.35rem;
-      line-height: 1.8;
-    }
-    .meta {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      margin: 14px 0 20px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      list-style: none;
+      margin: 16px 0 0;
+      padding: 0;
     }
+
+    .team-list li,
+    .mini-stat,
     .meta-card {
       border: 1px solid var(--line);
       border-radius: 16px;
-      padding: 12px;
-      background: #fffaf0;
+      background: rgba(255,255,255,0.045);
+      padding: 11px 12px;
     }
-    .meta-card strong {
-      display: block;
-      font-size: 1.2rem;
-      color: var(--accent-dark);
-    }
-    .status {
-      border-left: 4px solid var(--accent);
-      padding: 12px 14px;
-      background: #f6f4e9;
-      border-radius: 14px;
-      margin: 14px 0;
-      line-height: 1.65;
-    }
-    .status.infeasible {
-      border-left-color: var(--danger);
-      background: #fff0eb;
-    }
-    .groups-grid {
+
+    .meta {
       display: grid;
-      grid-template-columns: repeat(2, minmax(180px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
       margin: 18px 0;
     }
-    .group-card {
-      border: 1px solid var(--line);
-      border-radius: 18px;
+
+    .meta-card {
+      color: var(--muted);
+      min-height: 84px;
+    }
+
+    .meta-card strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--ink);
+      font: 900 2rem/0.9 var(--font-display);
+      letter-spacing: -0.06em;
+    }
+
+    .status {
+      border: 1px solid rgba(214,255,99,0.26);
+      border-radius: 20px;
       padding: 16px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,244,236,0.98));
+      background:
+        linear-gradient(135deg, rgba(214,255,99,0.12), rgba(255,255,255,0.035));
+      color: var(--muted);
+      line-height: 1.7;
+      margin: 16px 0;
     }
-    .group-card h3 { margin: 0 0 10px; }
-    .group-card ol {
-      margin: 0;
-      padding-left: 1.2rem;
-      line-height: 1.8;
+
+    .status strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 6px;
     }
-    .downloads {
-      display: flex;
-      flex-wrap: wrap;
+
+    .status.infeasible {
+      border-color: rgba(255,118,95,0.34);
+      background: rgba(255,118,95,0.1);
+    }
+
+    .groups-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
-      margin-top: 16px;
+      margin: 18px 0;
     }
+
+    .group-card {
+      position: relative;
+      min-height: 220px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 18px;
+      overflow: hidden;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,0.09), rgba(255,255,255,0.03)),
+        var(--panel-solid);
+      transition: transform 220ms ease, border-color 220ms ease, background 220ms ease;
+    }
+
+    .group-card::after {
+      content: "";
+      position: absolute;
+      right: -42px;
+      bottom: -42px;
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(214,255,99,0.18), transparent 66%);
+      opacity: 0;
+      transition: opacity 220ms ease;
+    }
+
+    .group-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(214,255,99,0.48);
+      background: linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
+    }
+
+    .group-card:hover::after { opacity: 1; }
+
+    .group-card h3 {
+      margin: 0 0 18px;
+      font: 900 clamp(2rem, 5vw, 4.4rem)/0.8 var(--font-display);
+      letter-spacing: -0.08em;
+      text-transform: uppercase;
+    }
+
+    .group-card ol {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 9px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: teams;
+    }
+
+    .group-card li {
+      counter-increment: teams;
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 10px;
+      align-items: center;
+      color: var(--ink);
+    }
+
+    .group-card li::before {
+      content: counter(teams, decimal-leading-zero);
+      color: var(--muted);
+      font-size: 0.74rem;
+      letter-spacing: 0.12em;
+    }
+
+    .empty-state {
+      min-height: 420px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 34px;
+      background:
+        radial-gradient(circle at 50% 24%, rgba(214,255,99,0.16), transparent 26%),
+        linear-gradient(145deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+    }
+
+    .empty-state p { max-width: 520px; }
+
     code {
-      font-family: Consolas, "Courier New", monospace;
-      font-size: 0.95em;
+      color: var(--accent);
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 0.9em;
     }
-    @media (max-width: 860px) {
-      .layout,
+
+    hr {
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 24px 0;
+    }
+
+    @keyframes ambientShift {
+      from { transform: translate3d(-1%, -1%, 0) scale(1); }
+      to { transform: translate3d(1.5%, 1%, 0) scale(1.05); }
+    }
+
+    @keyframes gridDrift {
+      from { background-position: 0 0; }
+      to { background-position: 0 168px; }
+    }
+
+    @keyframes riseIn {
+      from { opacity: 0; transform: translateY(22px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes floatCard {
+      0%, 100% { transform: translateY(0) rotate(-1deg); }
+      50% { transform: translateY(-12px) rotate(1deg); }
+    }
+
+    @keyframes spinSlow {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes marquee {
+      to { transform: translateX(-50%); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 1ms !important;
+      }
+    }
+
+    @media (max-width: 940px) {
+      .hero,
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-card {
+        min-height: 420px;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .shell { width: min(100% - 22px, 1180px); padding-bottom: 42px; }
+      .nav { align-items: flex-start; }
+      .nav-links { display: none; }
+      .hero { min-height: auto; padding: 42px 0; }
+      h1 { font-size: clamp(3.2rem, 18vw, 5.2rem); }
+      .panel-head,
       .meta,
-      .groups-grid { grid-template-columns: 1fr; }
-      .shell { padding-top: 28px; }
+      .groups-grid,
+      .team-list,
+      .checkbox-row {
+        grid-template-columns: 1fr;
+      }
+      .panel-head { display: grid; }
+      .button,
+      button,
+      .button-link {
+        width: 100%;
+      }
+      .hero-card { min-height: 360px; border-radius: 26px; }
     }
   </style>
 </head>
 <body>
+  <div class="grain"></div>
+  <div class="runway"></div>
   <main class="shell">
-    <h1>足球系際盃抽籤工具</h1>
-    <p class="lead">
-      上傳同格式 Google 表單回覆 Excel，設定組數、晉級規則、加開時段與下載項目後抽籤。
-      亂數使用 <code>secrets.SystemRandom().shuffle()</code>，非 12 隊 4 組也會嘗試自動排小組賽與淘汰賽。
-    </p>
+    <nav class="nav" aria-label="Main navigation">
+      <a class="brand" href="#top">
+        <span>Interdept Cup</span>
+        <span>Draw Studio</span>
+      </a>
+      <div class="nav-links">
+        <a href="#draw">Draw</a>
+        <a href="#results">Results</a>
+        <a href="#outputs">Outputs</a>
+      </div>
+    </nav>
+
+    <section class="hero" id="top">
+      <div class="hero-copy">
+        <h1>Draw the cup. Keep the trust.</h1>
+        <p class="lead">
+          一個給足球系際盃使用的抽籤與賽程工作室。上傳同格式 Google 表單 Excel，
+          選擇組數、晉級規則與輸出格式，再用 <code>secrets.SystemRandom().shuffle()</code>
+          完成公開、可追溯的抽籤。
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#draw">Start Draw</a>
+          <a class="button" href="#results">Explore Results</a>
+        </div>
+      </div>
+      <div class="hero-card" aria-hidden="true">
+        <div class="spec-strip">
+          <span>OS entropy</span>
+          <span>Offline ready</span>
+        </div>
+        <div class="ball-orbit"></div>
+      </div>
+    </section>
+
+    <section class="ticker" aria-hidden="true">
+      <div class="ticker-track">
+        <span>Groups</span><span>/</span><span>Schedule</span><span>/</span><span>PDF Proof</span><span>/</span><span>Excel Output</span><span>/</span>
+        <span>Groups</span><span>/</span><span>Schedule</span><span>/</span><span>PDF Proof</span><span>/</span><span>Excel Output</span><span>/</span>
+      </div>
+    </section>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        <div class="messages">
+        <div class="messages" style="margin-top: 24px;">
           {% for category, message in messages %}
             <div class="message {{ category }}">{{ message }}</div>
           {% endfor %}
@@ -275,144 +803,177 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
       {% endif %}
     {% endwith %}
 
-    <div class="layout">
-      <section class="panel">
-        <h2>建立抽籤</h2>
-        <form method="post" action="{{ url_for('draw') }}" enctype="multipart/form-data">
-          <div class="form-grid">
-            <label>
-              上傳報名表 Excel
-              <input type="file" name="registration_file" accept=".xlsx,.xlsm">
-              <span class="hint">不選檔案時，會使用資料夾內可找到的本機回覆表 fallback。</span>
-            </label>
-            <label>
-              組數
-              <input type="number" name="group_count" min="2" max="{{ config.max_group_count }}" value="{{ defaults.group_count }}" required>
-            </label>
-            <label>
-              每組前 N 名晉級
-              <input type="number" name="advance_per_group" min="1" value="{{ defaults.advance_per_group }}" required>
-            </label>
-            <label>
-              最佳名次補位幾隊
-              <input type="number" name="wildcard_count" min="0" value="{{ defaults.wildcard_count }}" required>
-            </label>
-            <label>
-              淘汰賽階段
-              <select name="knockout_format">
-                <option value="semifinal" {% if defaults.knockout_format == "semifinal" %}selected{% endif %}>直接四強（4 隊晉級）</option>
-                <option value="quarterfinal" {% if defaults.knockout_format == "quarterfinal" %}selected{% endif %}>八強賽（8 隊晉級）</option>
-              </select>
-              <span class="hint">4 組八強通常設定為每組前 2 名；直接四強通常設定為每組第 1 名。</span>
-            </label>
-            <label>
-              DAY1 最晚踢到
-              <select name="day1_latest_end">
-                {% for value in day1_latest_end_options %}
-                  <option value="{{ value }}" {% if value == defaults.day1_latest_end %}selected{% endif %}>{{ value }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label>
-              DAY2 最晚踢到
-              <select name="day2_latest_end">
-                {% for value in day2_latest_end_options %}
-                  <option value="{{ value }}" {% if value == defaults.day2_latest_end %}selected{% endif %}>{{ value }}</option>
-                {% endfor %}
-              </select>
-            </label>
+    <section class="workspace">
+      <div class="panel" id="draw">
+        <div class="panel-inner">
+          <div class="panel-head">
             <div>
-              <div class="note" style="font-weight:700;margin-bottom:8px;">本次提供下載</div>
-              <div class="checkbox-row">
-                <label><input type="checkbox" name="generate_json" value="1" {% if defaults.generate_json %}checked{% endif %}> JSON</label>
-                <label><input type="checkbox" name="generate_excel" value="1" {% if defaults.generate_excel %}checked{% endif %}> Excel</label>
-                <label><input type="checkbox" name="generate_pdf" value="1" {% if defaults.generate_pdf %}checked{% endif %}> PDF</label>
-              </div>
-              <span class="hint">抽籤後不會自動下載；只會顯示你勾選項目的下載按鈕。</span>
+              <p class="panel-kicker">Configure</p>
+              <h2>Draw Setup</h2>
             </div>
+            <p class="note">像選商品尺寸一樣設定抽籤規格。沒有上傳檔案時，會使用本機 fallback 報名表。</p>
           </div>
-          <div class="actions">
-            <button type="submit">開始抽籤</button>
-            <span class="note">每次抽籤會更新 <code>outputs/latest</code>，舊結果仍保留在 <code>outputs/archive</code>。</span>
+
+          <form method="post" action="{{ url_for('draw') }}" enctype="multipart/form-data">
+            <div class="form-grid">
+              <label>
+                Upload Excel
+                <input type="file" name="registration_file" accept=".xlsx,.xlsm">
+                <span class="hint">支援 .xlsx / .xlsm，隊名欄位預設讀取「{{ config.team_column }}」。</span>
+              </label>
+
+              <label>
+                Group Count
+                <input type="number" name="group_count" min="2" max="{{ config.max_group_count }}" value="{{ defaults.group_count }}" required>
+              </label>
+
+              <label>
+                Advance Per Group
+                <input type="number" name="advance_per_group" min="1" value="{{ defaults.advance_per_group }}" required>
+              </label>
+
+              <label>
+                Wildcard Teams
+                <input type="number" name="wildcard_count" min="0" value="{{ defaults.wildcard_count }}" required>
+                <span class="hint">例如最佳第二名 2 隊，就填 2。</span>
+              </label>
+
+              <label>
+                Knockout Format
+                <select name="knockout_format">
+                  <option value="semifinal" {% if defaults.knockout_format == "semifinal" %}selected{% endif %}>Semifinal - 4 teams advance</option>
+                  <option value="quarterfinal" {% if defaults.knockout_format == "quarterfinal" %}selected{% endif %}>Quarterfinal - 8 teams advance</option>
+                </select>
+              </label>
+
+              <label>
+                DAY1 Latest Finish
+                <select name="day1_latest_end">
+                  {% for value in day1_latest_end_options %}
+                    <option value="{{ value }}" {% if value == defaults.day1_latest_end %}selected{% endif %}>{{ value }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label>
+                DAY2 Latest Finish
+                <select name="day2_latest_end">
+                  {% for value in day2_latest_end_options %}
+                    <option value="{{ value }}" {% if value == defaults.day2_latest_end %}selected{% endif %}>{{ value }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <div>
+                <div class="field-label" style="margin-bottom: 8px;">Output Pack</div>
+                <div class="checkbox-row">
+                  <label><input type="checkbox" name="generate_json" value="1" {% if defaults.generate_json %}checked{% endif %}> JSON</label>
+                  <label><input type="checkbox" name="generate_excel" value="1" {% if defaults.generate_excel %}checked{% endif %}> Excel</label>
+                  <label><input type="checkbox" name="generate_pdf" value="1" {% if defaults.generate_pdf %}checked{% endif %}> PDF</label>
+                </div>
+                <p class="hint" style="margin-top: 8px;">JSON 會作為抽籤紀錄；PDF 用來向參賽者說明隨機方式。</p>
+              </div>
+            </div>
+
+            <div class="actions" style="margin-top: 22px;">
+              <button type="submit">Start Draw</button>
+              <span class="note">結果會更新 <code>outputs/latest</code>，舊版保留在 <code>outputs/archive</code>。</span>
+            </div>
+          </form>
+
+          <hr>
+          <div>
+            <p class="panel-kicker">Local Fallback</p>
+            <h2 style="font-size: clamp(1.5rem, 2.4vw, 2.3rem);">Team List</h2>
+            {% if teams %}
+              <p class="note" style="margin-top: 10px;">目前本機報名表讀到 {{ teams|length }} 隊。上傳檔案時，會以上傳檔案為準。</p>
+              <ol class="team-list">
+                {% for team in teams %}
+                  <li>{{ team }}</li>
+                {% endfor %}
+              </ol>
+            {% else %}
+              <p class="note" style="margin-top: 10px;">{{ teams_error or "尚未讀到本機報名表，請直接上傳 Excel 後抽籤。" }}</p>
+            {% endif %}
           </div>
-        </form>
+        </div>
+      </div>
 
-        <hr style="border:0;border-top:1px solid var(--line);margin:22px 0;">
-        <h2>本機 fallback 名單</h2>
-        {% if teams %}
-          <p class="note">目前可從本機報名表讀到 {{ teams|length }} 隊。上傳檔案時會以你上傳的檔案為準。</p>
-          <ol class="team-list">
-            {% for team in teams %}
-              <li>{{ team }}</li>
-            {% endfor %}
-          </ol>
-        {% else %}
-          <p class="note">{{ teams_error or "尚未讀到本機報名表，請直接上傳 Excel 後抽籤。" }}</p>
-        {% endif %}
-      </section>
-
-      <section class="panel">
+      <div class="panel" id="results">
         {% if latest_draw %}
-          <h2>目前抽籤結果</h2>
-          <p class="note">抽籤時間：{{ latest_draw.drawn_at }}</p>
-          <p class="note">亂數函數：<code>{{ latest_draw.random_function }}</code></p>
-          <div class="meta">
-            <div class="meta-card"><strong>{{ latest_draw.team_count or latest_draw.teams|length }}</strong>隊伍數</div>
-            <div class="meta-card"><strong>{{ latest_draw.group_count or latest_draw.groups|length }}</strong>組數</div>
-            <div class="meta-card"><strong>{{ latest_draw.advancement.total_advancers if latest_draw.advancement else "待定" }}</strong>晉級隊數</div>
-          </div>
-          {% if latest_draw.advancement %}
-            <p>晉級規則：{{ latest_draw.advancement.summary }}</p>
-            <p>淘汰賽階段：{{ latest_draw.advancement.knockout_stage or latest_draw.knockout_format }}</p>
-          {% endif %}
+          <div class="panel-inner">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Latest Drop</p>
+                <h2>Draw Results</h2>
+              </div>
+              <p class="note">抽籤時間：{{ latest_draw.drawn_at }}<br>亂數函數：<code>{{ latest_draw.random_function }}</code></p>
+            </div>
 
-          {% if latest_draw.schedule %}
-            <div class="status {{ latest_draw.schedule.status }}">
-              <strong>排程狀態：{{ "已排定" if latest_draw.schedule.status == "scheduled" else "排不下" }}</strong>
-              {% for message in latest_draw.schedule.messages %}
-                <div>{{ message }}</div>
+            <div class="meta">
+              <div class="meta-card"><strong>{{ latest_draw.team_count or latest_draw.teams|length }}</strong>Teams</div>
+              <div class="meta-card"><strong>{{ latest_draw.group_count or latest_draw.groups|length }}</strong>Groups</div>
+              <div class="meta-card"><strong>{{ latest_draw.advancement.total_advancers if latest_draw.advancement else "TBD" }}</strong>Advance</div>
+            </div>
+
+            {% if latest_draw.advancement %}
+              <p class="note">晉級規則：{{ latest_draw.advancement.summary }}</p>
+              <p class="note">淘汰賽格式：{{ latest_draw.advancement.knockout_stage or latest_draw.knockout_format }}</p>
+            {% endif %}
+
+            {% if latest_draw.schedule %}
+              <div class="status {{ latest_draw.schedule.status }}">
+                <strong>{{ "Schedule ready" if latest_draw.schedule.status == "scheduled" else "Schedule needs adjustment" }}</strong>
+                {% for message in latest_draw.schedule.messages %}
+                  <div>{{ message }}</div>
+                {% endfor %}
+                {% if latest_draw.schedule.status != "scheduled" %}
+                  <div>可以放寬 DAY1/DAY2 最晚結束時間，或調整晉級隊數後重新抽籤。</div>
+                {% endif %}
+              </div>
+            {% endif %}
+
+            <div class="groups-grid">
+              {% for group_name, members in latest_draw.groups.items() %}
+                <div class="group-card">
+                  <h3>{{ group_name }}</h3>
+                  <ol>
+                    {% for team in members %}
+                      <li>{{ team }}</li>
+                    {% endfor %}
+                  </ol>
+                </div>
               {% endfor %}
-              {% if latest_draw.schedule.status != "scheduled" %}
-                <div>可以把左邊 DAY1/DAY2 最晚結束時間往後選，再重新抽籤或調整組數/晉級隊數。</div>
+            </div>
+
+            <div id="outputs">
+              {% if download_items %}
+                <div class="downloads">
+                  {% for item in download_items %}
+                    <a class="button-link" href="{{ url_for('download', kind=item.kind) }}">{{ item.label }}</a>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="note">這次沒有選擇下載輸出。系統仍會保留內部抽籤紀錄。</p>
               {% endif %}
             </div>
-          {% endif %}
 
-          <div class="groups-grid">
-            {% for group_name, members in latest_draw.groups.items() %}
-              <div class="group-card">
-                <h3>{{ group_name }} 組</h3>
-                <ol>
-                  {% for team in members %}
-                    <li>{{ team }}</li>
-                  {% endfor %}
-                </ol>
-              </div>
-            {% endfor %}
+            <form class="actions" method="post" action="{{ url_for('clear') }}" style="margin-top: 18px;">
+              <button class="button-secondary" type="submit">Clear Current Result</button>
+              <span class="note">只清空 <code>outputs/latest</code>，不刪 archive。</span>
+            </form>
           </div>
-
-          {% if download_items %}
-            <div class="downloads">
-              {% for item in download_items %}
-                <a class="button-link" href="{{ url_for('download', kind=item.kind) }}">{{ item.label }}</a>
-              {% endfor %}
-            </div>
-          {% else %}
-            <p class="note">本次沒有勾選公開下載項目；結果仍已保存在系統內部 JSON 供目前頁面顯示。</p>
-          {% endif %}
-
-          <form class="actions" method="post" action="{{ url_for('clear') }}">
-            <button class="button-secondary" type="submit">清空目前結果</button>
-            <span class="note">只清空 <code>outputs/latest</code>，不刪 archive 備份。</span>
-          </form>
         {% else %}
-          <h2>尚未抽籤</h2>
-          <p class="note">
-            左邊上傳 Excel 並按下抽籤後，這裡會顯示分組、排程狀態與你勾選的下載按鈕。
-          </p>
+          <div class="empty-state">
+            <div>
+              <p class="panel-kicker">No Draw Yet</p>
+              <h2>Ready when the teams are.</h2>
+              <p class="note" style="margin: 16px auto 0;">左側上傳 Excel 並開始抽籤後，這裡會顯示分組結果、排程狀態與下載連結。</p>
+            </div>
+          </div>
         {% endif %}
-      </section>
-    </div>
+      </div>
+    </section>
   </main>
 </body>
 </html>
@@ -450,14 +1011,13 @@ def index() -> str:
         "generate_excel": latest_download_options["schedule"],
         "generate_pdf": latest_download_options["pdf"],
     }
-    download_items = build_download_items(latest_draw)
 
     return render_template_string(
         PAGE_TEMPLATE,
         config=config,
         defaults=defaults,
         latest_draw=latest_draw,
-        download_items=download_items,
+        download_items=build_download_items(latest_draw),
         day1_latest_end_options=config["latest_end_options"]["DAY1"],
         day2_latest_end_options=config["latest_end_options"]["DAY2"],
         teams=teams,
@@ -493,12 +1053,12 @@ def draw() -> Any:
 
         selected_outputs = selected_output_labels(download_options)
         if draw_data.get("schedule", {}).get("status") == "scheduled":
-            flash(f"抽籤完成，賽程已排定。本次下載項目：{selected_outputs}。", "success")
+            flash(f"抽籤完成，賽程可排入目前限制。已產生：{selected_outputs}。", "success")
         else:
-            flash(f"抽籤完成，但目前時段排不下完整賽程。本次下載項目：{selected_outputs}。", "error")
+            flash(f"抽籤完成，但賽程需要調整限制。已產生：{selected_outputs}。", "error")
 
         if not artifacts.latest_sync_complete:
-            flash("提醒：latest 資料夾有檔案被開啟中，部分檔案可能未能更新；請關閉 Excel/PDF 後再抽一次。", "error")
+            flash("提醒：latest 資料夾有檔案可能正被開啟，部分檔案未能更新；請關閉 Excel/PDF 後再試一次。", "error")
     except Exception as exc:
         flash(str(exc), "error")
 
@@ -527,7 +1087,7 @@ def download() -> Any:
 
     download_options = normalize_download_options(latest_draw.get("download_options"))
     if kind not in download_options or not download_options[kind]:
-        flash("本次抽籤沒有勾選這個下載項目。", "error")
+        flash("這次抽籤沒有選擇產生這個下載檔。", "error")
         return redirect(url_for("index"))
 
     artifact_filenames = get_artifact_filenames(BASE_DIR)
@@ -538,7 +1098,7 @@ def download() -> Any:
 
     file_path = BASE_DIR / "outputs" / "latest" / filename
     if not file_path.exists():
-        flash("找不到下載檔案，請重新產生或勾選該輸出項目。", "error")
+        flash("找不到下載檔案，請先完成一次有勾選該輸出的抽籤。", "error")
         return redirect(url_for("index"))
 
     return send_file(file_path, as_attachment=True, download_name=file_path.name)
@@ -549,9 +1109,9 @@ def build_download_items(latest_draw: dict[str, Any] | None) -> list[dict[str, s
         return []
 
     labels = {
-        "json": "下載 JSON",
-        "schedule": "下載賽程 Excel",
-        "pdf": "下載 PDF 說明",
+        "json": "Download JSON",
+        "schedule": "Download Excel",
+        "pdf": "Download PDF",
     }
     artifact_filenames = get_artifact_filenames(BASE_DIR)
     download_options = normalize_download_options(latest_draw.get("download_options"))
@@ -597,7 +1157,7 @@ def selected_output_labels(download_options: dict[str, bool]) -> str:
         labels.append("Excel")
     if download_options["pdf"]:
         labels.append("PDF")
-    return "、".join(labels) if labels else "無公開下載"
+    return "、".join(labels) if labels else "不產生下載檔"
 
 
 def get_registration_source_from_request() -> tuple[Path | io.BytesIO | None, str | None]:
