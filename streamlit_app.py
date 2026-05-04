@@ -56,6 +56,13 @@ def main() -> None:
             value=int(config["default_wildcard_count"]),
             step=1,
         )
+        knockout_label = st.selectbox(
+            "淘汰賽階段",
+            ["直接四強（4 隊晉級）", "八強賽（8 隊晉級）"],
+            index=0 if str(config.get("default_knockout_format", "semifinal")) == "semifinal" else 1,
+        )
+        knockout_format = "quarterfinal" if "八強" in knockout_label else "semifinal"
+        st.caption("直接四強需剛好 4 隊晉級；八強賽需剛好 8 隊晉級。4 組八強通常設定為每組前 2 名。")
 
         st.subheader("輸出")
         include_json = st.checkbox("JSON", value=True)
@@ -79,6 +86,7 @@ def main() -> None:
             group_count=int(group_count),
             advance_per_group=int(advance_per_group),
             wildcard_count=int(wildcard_count),
+            knockout_format=knockout_format,
             download_options={
                 "json": include_json,
                 "schedule": include_schedule,
@@ -113,6 +121,7 @@ def run_draw(
     group_count: int,
     advance_per_group: int,
     wildcard_count: int,
+    knockout_format: str,
     download_options: dict[str, bool],
 ) -> None:
     try:
@@ -129,6 +138,7 @@ def run_draw(
             group_count=group_count,
             advance_per_group=advance_per_group,
             wildcard_count=wildcard_count,
+            knockout_format=knockout_format,
             download_options=download_options,
         )
     except Exception as exc:
@@ -158,6 +168,7 @@ def show_latest_draw(draw_data: dict) -> None:
     st.write(f"亂數函數：`{draw_data.get('random_function', 'secrets.SystemRandom().shuffle')}`")
     if advancement:
         st.write(f"晉級規則：{advancement.get('summary', '')}")
+    st.write(f"淘汰賽階段：{advancement.get('knockout_stage', draw_data.get('knockout_format', 'semifinal'))}")
 
     groups = draw_data.get("groups", {})
     if groups:

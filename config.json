@@ -12,6 +12,7 @@
   "max_group_count": 26,
   "default_advance_per_group": 1,
   "default_wildcard_count": 0,
+  "default_knockout_format": "semifinal",
   "template_schedule_team_count": 12,
   "template_schedule_group_count": 4,
   "schedule_filename": "114學年度足球系際盃_賽程表.xlsx",

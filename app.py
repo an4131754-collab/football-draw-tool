@@ -298,6 +298,14 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
               <input type="number" name="wildcard_count" min="0" value="{{ defaults.wildcard_count }}" required>
             </label>
             <label>
+              淘汰賽階段
+              <select name="knockout_format">
+                <option value="semifinal" {% if defaults.knockout_format == "semifinal" %}selected{% endif %}>直接四強（4 隊晉級）</option>
+                <option value="quarterfinal" {% if defaults.knockout_format == "quarterfinal" %}selected{% endif %}>八強賽（8 隊晉級）</option>
+              </select>
+              <span class="hint">4 組八強通常設定為每組前 2 名；直接四強通常設定為每組第 1 名。</span>
+            </label>
+            <label>
               DAY1 最晚踢到
               <select name="day1_latest_end">
                 {% for value in day1_latest_end_options %}
@@ -355,6 +363,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
           </div>
           {% if latest_draw.advancement %}
             <p>晉級規則：{{ latest_draw.advancement.summary }}</p>
+            <p>淘汰賽階段：{{ latest_draw.advancement.knockout_stage or latest_draw.knockout_format }}</p>
           {% endif %}
 
           {% if latest_draw.schedule %}
@@ -430,6 +439,11 @@ def index() -> str:
             if latest_draw
             else config["default_wildcard_count"]
         ),
+        "knockout_format": (
+            latest_draw.get("knockout_format", config.get("default_knockout_format", "semifinal"))
+            if latest_draw
+            else config.get("default_knockout_format", "semifinal")
+        ),
         "day1_latest_end": latest_constraints.get("day1_latest_end", config["default_day1_latest_end"]),
         "day2_latest_end": latest_constraints.get("day2_latest_end", config["default_day2_latest_end"]),
         "generate_json": latest_download_options["json"],
@@ -457,6 +471,7 @@ def draw() -> Any:
         group_count = parse_int_field("group_count", "組數")
         advance_per_group = parse_int_field("advance_per_group", "每組晉級名額")
         wildcard_count = parse_int_field("wildcard_count", "最佳名次補位數")
+        knockout_format = request.form.get("knockout_format", "semifinal").strip() or "semifinal"
         day1_latest_end = request.form.get("day1_latest_end", "").strip() or None
         day2_latest_end = request.form.get("day2_latest_end", "").strip() or None
         download_options = parse_download_options()
@@ -470,6 +485,7 @@ def draw() -> Any:
                 group_count=group_count,
                 advance_per_group=advance_per_group,
                 wildcard_count=wildcard_count,
+                knockout_format=knockout_format,
                 download_options=download_options,
                 day1_latest_end=day1_latest_end,
                 day2_latest_end=day2_latest_end,

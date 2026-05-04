@@ -81,6 +81,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_group_count": 26,
     "default_advance_per_group": 1,
     "default_wildcard_count": 0,
+    "default_knockout_format": "semifinal",
     "template_schedule_team_count": 12,
     "template_schedule_group_count": 4,
     "schedule_filename": SCHEDULE_FILENAME,
@@ -275,13 +276,15 @@ def create_draw_data(
     group_count: int,
     advance_per_group: int,
     wildcard_count: int,
+    knockout_format: str | None = None,
     config: dict[str, Any] | None = None,
     download_options: dict[str, bool] | None = None,
     day1_latest_end: str | None = None,
     day2_latest_end: str | None = None,
 ) -> dict[str, Any]:
     config = config or load_config(BASE_DIR)
-    validate_draw_options(teams, group_count, advance_per_group, wildcard_count, config)
+    knockout_format = normalize_knockout_format(knockout_format or str(config.get("default_knockout_format", "semifinal")))
+    validate_draw_options(teams, group_count, advance_per_group, wildcard_count, knockout_format, config)
 
     shuffled_teams = list(teams)
     rng = secrets.SystemRandom()
@@ -299,7 +302,7 @@ def create_draw_data(
         slots[slot_name] = team
         slot_order.append(slot_name)
 
-    advancement = build_advancement_data(groups, advance_per_group, wildcard_count)
+    advancement = build_advancement_data(groups, advance_per_group, wildcard_count, knockout_format)
 
     draw_data = {
         "drawn_at": datetime.now().isoformat(timespec="seconds"),
@@ -311,6 +314,7 @@ def create_draw_data(
         "slots": slots,
         "groups": groups,
         "advancement": advancement,
+        "knockout_format": knockout_format,
         "schedule_mode": determine_schedule_mode(len(teams), group_count, config),
         "download_options": normalize_download_options(download_options),
         "random_function": RANDOM_FUNCTION_NAME,
@@ -330,6 +334,7 @@ def validate_draw_options(
     group_count: int,
     advance_per_group: int,
     wildcard_count: int,
+    knockout_format: str,
     config: dict[str, Any],
 ) -> None:
     validate_teams(teams, config)
@@ -354,12 +359,20 @@ def validate_draw_options(
     total_advancers = (group_count * advance_per_group) + wildcard_count
     if total_advancers > len(teams):
         raise ValueError("總晉級隊數不能大於參賽隊伍數。")
+    required_advancers = knockout_advancer_count(knockout_format)
+    if total_advancers != required_advancers:
+        stage_label = knockout_format_label(knockout_format)
+        raise ValueError(
+            f"{stage_label} 需要剛好 {required_advancers} 隊晉級；"
+            f"目前設定會產生 {total_advancers} 隊，請調整每組晉級名額或最佳名次補位數。"
+        )
 
 
 def build_advancement_data(
     groups: dict[str, list[str]],
     advance_per_group: int,
     wildcard_count: int,
+    knockout_format: str = "semifinal",
 ) -> dict[str, Any]:
     total_advancers = (len(groups) * advance_per_group) + wildcard_count
     if wildcard_count == 0:
@@ -382,9 +395,40 @@ def build_advancement_data(
         "advance_per_group": advance_per_group,
         "wildcard_count": wildcard_count,
         "total_advancers": total_advancers,
+        "knockout_format": knockout_format,
+        "knockout_stage": knockout_format_label(knockout_format),
         "summary": summary,
         "placeholders": placeholders,
     }
+
+
+def normalize_knockout_format(value: str) -> str:
+    normalized = str(value).strip().lower()
+    aliases = {
+        "4": "semifinal",
+        "four": "semifinal",
+        "semi": "semifinal",
+        "semis": "semifinal",
+        "semifinal": "semifinal",
+        "semifinals": "semifinal",
+        "direct_semifinal": "semifinal",
+        "8": "quarterfinal",
+        "eight": "quarterfinal",
+        "quarter": "quarterfinal",
+        "quarterfinal": "quarterfinal",
+        "quarterfinals": "quarterfinal",
+    }
+    if normalized not in aliases:
+        raise ValueError("淘汰賽階段只能選擇直接四強或八強賽。")
+    return aliases[normalized]
+
+
+def knockout_advancer_count(knockout_format: str) -> int:
+    return {"semifinal": 4, "quarterfinal": 8}[normalize_knockout_format(knockout_format)]
+
+
+def knockout_format_label(knockout_format: str) -> str:
+    return {"semifinal": "直接四強", "quarterfinal": "八強賽"}[normalize_knockout_format(knockout_format)]
 
 
 def determine_schedule_mode(team_count: int, group_count: int, config: dict[str, Any]) -> str:
@@ -511,7 +555,11 @@ def build_schedule_data(
         )
     warnings.extend(group_warning)
 
-    knockout_plan = build_knockout_matches(draw_data["advancement"]["placeholders"], max_daily_matches)
+    knockout_plan = build_knockout_matches(
+        draw_data["advancement"]["placeholders"],
+        max_daily_matches,
+        draw_data.get("knockout_format", draw_data["advancement"].get("knockout_format", "semifinal")),
+    )
     if knockout_plan["status"] != "scheduled":
         return infeasible_schedule(
             constraints,
@@ -726,8 +774,9 @@ def schedule_group_matches(
     return scheduled, warnings
 
 
-def build_knockout_matches(placeholders: list[str], max_daily_matches: int) -> dict[str, Any]:
+def build_knockout_matches(placeholders: list[str], max_daily_matches: int, knockout_format: str = "semifinal") -> dict[str, Any]:
     participant_count = len(placeholders)
+    knockout_format = normalize_knockout_format(knockout_format)
     if participant_count < 2:
         return {
             "status": "infeasible",
@@ -754,6 +803,25 @@ def build_knockout_matches(placeholders: list[str], max_daily_matches: int) -> d
 
     if participant_count == 4:
         pairs = [(current[0], current[2]), (current[1], current[3])]
+        round_matches, current, losers, match_index = make_knockout_round(
+            pairs,
+            stage="四強",
+            stage_code="semifinal",
+            match_index=match_index,
+        )
+        rounds.append({"stage": "四強", "stage_code": "semifinal", "matches": round_matches})
+        semifinal_losers = losers
+    elif participant_count == 8 and knockout_format == "quarterfinal":
+        pairs = make_quarterfinal_pairs(current)
+        round_matches, current, _losers, match_index = make_knockout_round(
+            pairs,
+            stage="八強",
+            stage_code="knockout",
+            match_index=match_index,
+        )
+        rounds.append({"stage": "八強", "stage_code": "knockout", "matches": round_matches})
+
+        pairs = [(current[0], current[1]), (current[2], current[3])]
         round_matches, current, losers, match_index = make_knockout_round(
             pairs,
             stage="四強",
@@ -830,6 +898,18 @@ def make_seed_pairs(participants: list[str]) -> list[tuple[str, str]]:
     return [
         (participants[index], participants[-(index + 1)])
         for index in range(len(participants) // 2)
+    ]
+
+
+def make_quarterfinal_pairs(participants: list[str]) -> list[tuple[str, str]]:
+    participant_set = set(participants)
+    preferred_pairs = [("A1", "B2"), ("B1", "A2"), ("C1", "D2"), ("D1", "C2")]
+    if len(participants) == 8 and all(item in participant_set for pair in preferred_pairs for item in pair):
+        return preferred_pairs
+
+    return [
+        (participants[index], participants[index + 1])
+        for index in range(0, len(participants), 2)
     ]
 
 
@@ -1067,6 +1147,7 @@ def create_draw_artifacts(
     group_count: int | None = None,
     advance_per_group: int | None = None,
     wildcard_count: int | None = None,
+    knockout_format: str | None = None,
     download_options: dict[str, bool] | None = None,
     day1_latest_end: str | None = None,
     day2_latest_end: str | None = None,
@@ -1085,6 +1166,7 @@ def create_draw_artifacts(
         group_count=int(config["default_group_count"]) if group_count is None else group_count,
         advance_per_group=int(config["default_advance_per_group"]) if advance_per_group is None else advance_per_group,
         wildcard_count=int(config["default_wildcard_count"]) if wildcard_count is None else wildcard_count,
+        knockout_format=knockout_format,
         config=config,
         download_options=download_options,
         day1_latest_end=day1_latest_end,
@@ -1276,15 +1358,52 @@ def build_template_schedule_workbook(
             sheet[home_cell] = teams[home_index]
             sheet[away_cell] = teams[away_index]
 
-    apply_cell_values(sheet, config["semifinal_labels"])
-    for cell_name in config["clear_cells"]:
-        sheet[cell_name] = None
+    if normalize_knockout_format(draw_data.get("knockout_format", "semifinal")) == "quarterfinal":
+        apply_cell_values(sheet, build_template_quarterfinal_labels(draw_data))
+    else:
+        apply_cell_values(sheet, config["semifinal_labels"])
+        for cell_name in config["clear_cells"]:
+            sheet[cell_name] = None
 
-    apply_cell_values(sheet, config["final_labels"])
-    for cell_name in config["reserve_cells"]:
-        sheet[cell_name] = None
+        apply_cell_values(sheet, config["final_labels"])
+        for cell_name in config["reserve_cells"]:
+            sheet[cell_name] = None
 
     workbook.save(output_path)
+
+
+def build_template_quarterfinal_labels(draw_data: dict[str, Any]) -> dict[str, Any]:
+    placeholders = list(draw_data["advancement"]["placeholders"])
+    if len(placeholders) != 8:
+        raise ValueError("八強模板需要剛好 8 隊晉級。")
+
+    quarterfinal_pairs = make_quarterfinal_pairs(placeholders)
+    return {
+        "B14": 13,
+        "D14": quarterfinal_pairs[0][0],
+        "E14": quarterfinal_pairs[0][1],
+        "G14": 14,
+        "I14": quarterfinal_pairs[1][0],
+        "J14": quarterfinal_pairs[1][1],
+        "B15": 15,
+        "D15": quarterfinal_pairs[2][0],
+        "E15": quarterfinal_pairs[2][1],
+        "G15": 16,
+        "I15": quarterfinal_pairs[3][0],
+        "J15": quarterfinal_pairs[3][1],
+        "B17": 17,
+        "D17": "13W",
+        "E17": "14W",
+        "G17": 18,
+        "I17": "15W",
+        "J17": "16W",
+        "B18": 19,
+        "D18": "17L",
+        "E18": "18L",
+        "G18": 20,
+        "I18": "17W",
+        "J18": "18W",
+    }
 
 
 def build_dynamic_schedule_workbook(draw_data: dict[str, Any], output_path: Path, config: dict[str, Any]) -> None:
@@ -1435,7 +1554,8 @@ def build_randomness_pdf(
         "四、賽制與排程摘要",
         f"本次分成 {draw_data['group_count']} 組。",
         f"晉級規則：{draw_data['advancement']['summary']}",
-        build_semifinal_summary_line(config) if draw_data.get("schedule_mode") == "template_schedule" else "非 12 隊 4 組時，工具會另產生動態賽程 Excel。",
+        f"淘汰賽階段：{draw_data['advancement'].get('knockout_stage', knockout_format_label(draw_data.get('knockout_format', 'semifinal')))}",
+        build_template_knockout_summary_line(draw_data, config) if draw_data.get("schedule_mode") == "template_schedule" else "非 12 隊 4 組時，工具會另產生動態賽程 Excel。",
         f"排程狀態：{schedule.get('status', 'unknown')}",
         *schedule.get("messages", []),
         "",
@@ -1487,6 +1607,12 @@ def build_semifinal_summary_line(config: dict[str, Any]) -> str:
     left_pair = f"{format_stage_label(labels['D14'])} 對 {format_stage_label(labels['E14'])}"
     right_pair = f"{format_stage_label(labels['I14'])} 對 {format_stage_label(labels['J14'])}"
     return f"四強固定為：{left_pair}、{right_pair}。"
+
+
+def build_template_knockout_summary_line(draw_data: dict[str, Any], config: dict[str, Any]) -> str:
+    if normalize_knockout_format(draw_data.get("knockout_format", "semifinal")) == "quarterfinal":
+        return "八強賽沿用 113 公開版模板：10:00 與 11:00 打八強，14:00 打四強，15:00 打季軍與冠軍。"
+    return build_semifinal_summary_line(config)
 
 
 def format_stage_label(label: Any) -> str:
