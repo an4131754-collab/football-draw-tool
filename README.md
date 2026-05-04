@@ -1,116 +1,140 @@
-# 足球系際盃抽籤工具
+# Interdept Cup Draw Studio
 
-這個專案可以讀取同格式 Google 表單回覆 Excel，進行足球系際盃抽籤、分組與賽程安排。
+足球系際盃抽籤與賽程產生工具。支援上傳同格式 Google 表單回覆 Excel，抽出分組，產生 JSON、Excel 與 PDF 隨機性說明。
 
-## 本機啟動
+目前有兩個入口：
 
-雙擊：
+- `streamlit_app.py`：給 Streamlit Community Cloud 部署使用，UI 是黑白精品風新版。
+- `app.py`：Flask 版本，可本機或 Render/Railway 類平台使用。
+
+## Features
+
+- 上傳任意同格式 Excel，不綁死單一回覆表檔名。
+- 隊名欄位預設讀取 `科系`。
+- 支援非 12 隊抽籤，組數可調，最少 2 組、最多 26 組。
+- 使用 `secrets.SystemRandom().shuffle()` 洗牌，亂數來自作業系統安全亂數來源。
+- 可設定每組晉級名額、最佳名次補位數、四強或八強淘汰賽格式。
+- 可選擇輸出 JSON、Excel、PDF。
+- 12 隊 4 組時可沿用 `113系際盃賽程及裁判表_公開版.xlsx` 產完整賽程。
+- 非 12 隊 4 組時會產分組結果 Excel，不硬套固定模板。
+
+## Streamlit 部署
+
+Streamlit Community Cloud 設定：
+
+```text
+Repository: an4131754-collab/football-draw-tool
+Branch: master
+Main file path: streamlit_app.py
+Python version: 3.12
+```
+
+Streamlit 會從 repo root 讀取 `requirements.txt`，並執行：
+
+```text
+streamlit run streamlit_app.py
+```
+
+部署後請直接在網頁上傳報名表 Excel。repo 不包含 `114...回覆.xlsx` 與 `outputs/`，避免報名資料外流。
+
+## 本機測試
+
+Flask 版本：
 
 ```powershell
 start_draw_site.bat
 ```
 
-或在終端機執行：
-
-```powershell
-C:\Users\USER\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe app.py
-```
-
-啟動後打開：
+打開：
 
 ```text
 http://127.0.0.1:8000
 ```
 
-## 網站流程
+Streamlit 版本：
 
-1. 上傳同格式 Google 表單回覆 Excel。
-2. 選擇組數、每組晉級名額、最佳名次補位數。
-3. 選擇 DAY1 / DAY2 最晚踢到幾點；預設沿用兩天兩場地。
-4. 勾選本次要提供下載的項目：JSON、Excel、PDF。
-5. 按「開始抽籤」。
-6. 抽完只會顯示結果與下載按鈕，不會自動下載。
+```powershell
+streamlit run streamlit_app.py
+```
 
-如果沒有上傳檔案，網站會嘗試使用資料夾內的本機 fallback 報名表。
+如果你的終端機找不到 `streamlit`，可先安裝依賴：
 
-## 賽程規則
+```powershell
+pip install -r requirements.txt
+```
 
-- 小組賽採完整單循環。
-- 2 隊小組可排；1 隊小組會顯示排程不可行，請調整組數。
-- DAY1 預設排小組賽，時段為 `09:00`、`10:00`、`11:00`、`14:00`、`15:00`、`16:00`。
-- DAY2 預設排淘汰賽，時段為 `10:00`、`11:00`、`14:00`、`15:00`。
-- 每時段有甲、乙兩場地，每場 45 分鐘。
-- 同一隊同一天最多 3 場，並盡量避免連續出賽。
-- 排不下時不會硬塞不公平賽程，會提示延後最晚結束時間、調整組數或減少晉級隊數。
+## 使用流程
 
-## 12 隊 4 組模板
+1. 上傳 Google 表單回覆 Excel。
+2. 選擇組數。
+3. 設定每組前 N 名晉級。
+4. 設定最佳名次補位數。
+5. 選擇淘汰賽格式。
+6. 選擇輸出 JSON、Excel、PDF。
+7. 按下抽籤。
+8. 下載需要的輸出檔。
 
-當隊伍數是 12 且組數是 4，工具會沿用 `113系際盃賽程及裁判表_公開版.xlsx`：
+## 12 隊 4 組賽程規則
 
-- DAY1 小組賽自動填入模板指定位置。
-- DAY2 四強固定為 `A1 vs C1`、`B1 vs D1`。
-- 10:00 打兩場四強。
-- 14:00 同時打季軍賽與冠軍賽。
+當隊伍數為 12 且組數為 4 時，會套用公開版模板產完整賽程：
+
+- DAY1 自動安排小組賽。
+- DAY2 四強為 `A1 vs C1`、`B1 vs D1`。
+- 四強預設 10:00 開打。
+- 季軍賽與冠軍賽預設 14:00 開打。
 - 11:00 與 15:00 時段保留空白。
-
-非 12 隊 4 組時，工具會產生新版動態賽程 Excel，包含分組表、賽程表與排程說明。
 
 ## CLI
 
 根據最新抽籤結果重新產生輸出：
 
 ```powershell
-C:\Users\USER\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scheduler.py --draw outputs/latest/draw_result.json
+python scheduler.py --draw outputs/latest/draw_result.json
 ```
 
 只重新產生 PDF：
 
 ```powershell
-C:\Users\USER\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scheduler.py --draw outputs/latest/draw_result.json --pdf-only
+python scheduler.py --draw outputs/latest/draw_result.json --pdf-only
 ```
 
-重新排程並指定加開時段：
+調整最晚結束時間：
 
 ```powershell
-C:\Users\USER\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scheduler.py --draw outputs/latest/draw_result.json --day1-latest-end 18:45 --day2-latest-end 17:45
+python scheduler.py --draw outputs/latest/draw_result.json --day1-latest-end 18:45 --day2-latest-end 17:45
 ```
 
-指定公開下載項目：
+指定輸出格式：
 
 ```powershell
-C:\Users\USER\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scheduler.py --draw outputs/latest/draw_result.json --outputs json,pdf,excel
+python scheduler.py --draw outputs/latest/draw_result.json --outputs json,pdf,excel
 ```
 
 ## 設定檔
 
-可修改 `config.json`：
+主要設定在 `config.json`：
 
-- `team_column`：報名表隊名欄位，預設 `科系`
-- `default_group_count`：網站預設組數
-- `default_advance_per_group`：預設每組晉級名額
-- `default_wildcard_count`：預設最佳名次補位數
-- `fields`：場地名稱，預設 `甲`、`乙`
-- `match_duration_minutes`：每場分鐘數，預設 45
-- `max_matches_per_team_per_day`：同隊每日最多場次，預設 3
-- `day_slots`：DAY1 / DAY2 預設開始時間
-- `latest_end_options`：網站可選的加開最晚結束時間
-- `schedule_filename`：Excel 輸出檔名
-- `pdf_filename`：PDF 輸出檔名
-- `semifinal_labels`：12 隊 4 組模板的 DAY2 四強文字
-- `final_labels`：12 隊 4 組模板的 DAY2 季軍賽與冠軍賽文字
+- `team_column`：報名表隊名欄位，預設 `科系`。
+- `default_group_count`：預設組數。
+- `default_advance_per_group`：預設每組晉級名額。
+- `default_wildcard_count`：預設最佳名次補位數。
+- `fields`：場地名稱。
+- `match_duration_minutes`：每場比賽分鐘數。
+- `max_matches_per_team_per_day`：同隊每日最多比賽數。
+- `day_slots`：DAY1 / DAY2 可用時段。
+- `latest_end_options`：網站可選的最晚結束時間。
+- `schedule_filename`：Excel 輸出檔名。
+- `pdf_filename`：PDF 輸出檔名。
+- `semifinal_labels`：12 隊 4 組模板的 DAY2 四強文字。
+- `final_labels`：12 隊 4 組模板的 DAY2 決賽與季軍賽文字。
 
-## 部署準備
+## Render / Railway
 
-部署到 Render/Railway 類平台時，安裝：
-
-```powershell
-pip install -r requirements.txt
-```
-
-平台啟動指令可用：
+如果不用 Streamlit，而是部署 Flask 版本：
 
 ```text
-gunicorn app:app
+Build Command: pip install -r requirements.txt
+Start Command: gunicorn app:app
 ```
 
 `Procfile` 已設定：
@@ -118,3 +142,14 @@ gunicorn app:app
 ```text
 web: gunicorn app:app
 ```
+
+## 資料安全
+
+`.gitignore` 已排除：
+
+- `outputs/`
+- `*回覆*.xlsx`
+- `*最終版*.xlsx`
+- `*最終版*.pdf`
+
+也就是說，報名回覆表與產出的結果檔不會被推上 GitHub。
