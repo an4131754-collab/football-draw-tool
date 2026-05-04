@@ -87,7 +87,7 @@ def inject_styles() -> None:
 
           .block-container {
             max-width: 1180px;
-            padding-top: 2.3rem;
+            padding-top: 1.65rem;
             padding-bottom: 5rem;
           }
 
@@ -96,7 +96,7 @@ def inject_styles() -> None:
             align-items: center;
             justify-content: space-between;
             gap: 1rem;
-            margin-bottom: clamp(2.4rem, 6vw, 5.2rem);
+            margin-bottom: clamp(1.8rem, 4.2vw, 3.5rem);
           }
 
           .brand {
@@ -123,17 +123,17 @@ def inject_styles() -> None:
 
           .hero {
             display: grid;
-            grid-template-columns: minmax(0, 1.05fr) minmax(280px, .76fr);
-            gap: clamp(2rem, 5vw, 4.6rem);
+            grid-template-columns: minmax(0, 1.14fr) minmax(240px, .56fr);
+            gap: clamp(1.6rem, 4vw, 3.6rem);
             align-items: center;
-            margin-bottom: 3.1rem;
+            margin-bottom: 1.65rem;
           }
 
           .hero h1 {
             margin: 0;
             max-width: 830px;
             color: var(--ink);
-            font: 900 clamp(3.3rem, 11vw, 9rem)/.84 "Bahnschrift", "Arial Narrow", "Microsoft JhengHei", sans-serif;
+            font: 900 clamp(3.25rem, 9.2vw, 7.35rem)/.84 "Bahnschrift", "Arial Narrow", "Microsoft JhengHei", sans-serif;
             letter-spacing: -.08em;
             text-transform: uppercase;
           }
@@ -141,8 +141,8 @@ def inject_styles() -> None:
           .hero p {
             max-width: 630px;
             color: var(--muted);
-            font-size: clamp(1rem, 1.5vw, 1.14rem);
-            line-height: 1.9;
+            font-size: clamp(.96rem, 1.3vw, 1.08rem);
+            line-height: 1.78;
           }
 
           .hero code,
@@ -153,15 +153,17 @@ def inject_styles() -> None:
 
           .hero-art {
             position: relative;
-            min-height: 480px;
+            width: min(100%, 360px);
+            min-height: 320px;
+            justify-self: center;
             border: 1px solid var(--line);
-            border-radius: 34px;
+            border-radius: 28px;
             overflow: hidden;
             background:
               linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.025)),
-              radial-gradient(circle at 50% 20%, rgba(214,255,99,.22), transparent 28%),
+              radial-gradient(circle at 50% 20%, rgba(214,255,99,.20), transparent 28%),
               #101010;
-            box-shadow: 0 34px 110px rgba(0,0,0,.5);
+            box-shadow: 0 26px 84px rgba(0,0,0,.48);
             animation: floatCard 7s ease-in-out infinite;
           }
 
@@ -180,27 +182,27 @@ def inject_styles() -> None:
           .hero-art::after {
             content: "SYSTEM RANDOM";
             position: absolute;
-            left: 28px;
-            right: 28px;
-            bottom: 28px;
-            padding: 22px;
+            left: 20px;
+            right: 20px;
+            bottom: 20px;
+            padding: 16px 18px;
             border: 1px solid rgba(255,255,255,.18);
             border-radius: 22px;
             background: rgba(0,0,0,.54);
             backdrop-filter: blur(18px);
-            font: 900 1.55rem/1 "Bahnschrift", "Arial Narrow", sans-serif;
+            font: 900 1.18rem/1 "Bahnschrift", "Arial Narrow", sans-serif;
             letter-spacing: -.04em;
           }
 
           .hero-art .spec {
             position: absolute;
-            top: 28px;
-            left: 28px;
-            right: 28px;
+            top: 20px;
+            left: 20px;
+            right: 20px;
             display: flex;
             justify-content: space-between;
             color: var(--muted);
-            font-size: .72rem;
+            font-size: .64rem;
             letter-spacing: .18em;
             text-transform: uppercase;
           }
@@ -209,8 +211,8 @@ def inject_styles() -> None:
             position: absolute;
             left: 50%;
             top: 48%;
-            width: 154px;
-            height: 154px;
+            width: 112px;
+            height: 112px;
             transform: translate(-50%, -50%);
             border-radius: 50%;
             background:
@@ -223,11 +225,11 @@ def inject_styles() -> None:
           .ticker {
             overflow: hidden;
             border-block: 1px solid var(--line);
-            margin: 2rem 0 1.6rem;
-            padding: 1rem 0;
+            margin: 1rem 0 1.1rem;
+            padding: .72rem 0;
             color: var(--muted);
             white-space: nowrap;
-            font: 900 clamp(1.5rem, 4vw, 3.6rem)/1 "Bahnschrift", "Arial Narrow", sans-serif;
+            font: 900 clamp(1.25rem, 3vw, 2.85rem)/1 "Bahnschrift", "Arial Narrow", sans-serif;
             letter-spacing: -.05em;
             text-transform: uppercase;
           }
@@ -427,7 +429,7 @@ def inject_styles() -> None:
             .brand-row, .hero { display: block; }
             .nav { display: none; }
             .hero h1 { font-size: clamp(3.1rem, 18vw, 5.4rem); }
-            .hero-art { min-height: 360px; margin-top: 2rem; }
+            .hero-art { min-height: 280px; margin: 1.5rem auto 0; }
             .group-grid, .team-list { grid-template-columns: 1fr; }
           }
         </style>
