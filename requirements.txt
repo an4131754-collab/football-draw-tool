@@ -3,3 +3,4 @@ openpyxl==3.1.5
 reportlab==4.4.9
 pypdf==6.10.0
 gunicorn==25.3.0
+streamlit==1.52.1
