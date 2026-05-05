@@ -10,12 +10,14 @@ from tournament_tools import (
     BASE_DIR,
     clear_latest_artifacts,
     create_draw_artifacts,
+    generate_artifacts,
     get_artifact_filenames,
     get_latest_draw_data,
     load_config,
     load_teams,
     normalize_download_options,
     resolve_registration_path,
+    update_draw_referees,
 )
 
 ALLOWED_UPLOAD_EXTENSIONS = {".xlsx", ".xlsm"}
@@ -635,6 +637,7 @@ def render_results_panel(latest_draw: dict[str, Any] | None) -> None:
         )
 
     render_groups(latest_draw["groups"])
+    render_referee_panel(latest_draw, load_config(BASE_DIR))
 
     items = build_download_items(latest_draw)
     if items:
@@ -661,6 +664,133 @@ def render_results_panel(latest_draw: dict[str, Any] | None) -> None:
         st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_referee_panel(latest_draw: dict[str, Any], config: dict[str, Any]) -> None:
+    schedule = latest_draw.get("schedule", {})
+    if schedule.get("status") != "scheduled":
+        return
+
+    st.markdown('<div class="referee-panel">', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="kicker" style="margin-top:1rem;">Referee Setup</p>'
+        '<h2 class="section-title" style="font-size:2.2rem;">Assign Officials</h2>'
+        '<p class="muted">抽籤與賽程完成後，在這裡輸入裁判；每場會排 3 位，同時段不會重複安排同一人。</p>',
+        unsafe_allow_html=True,
+    )
+
+    existing_referees = {item.get("name", ""): item for item in latest_draw.get("referees", [])}
+    draw_key = latest_draw.get("drawn_at", "")
+    if st.session_state.get("referee_names_drawn_at") != draw_key:
+        st.session_state["referee_names_text"] = "\n".join(existing_referees)
+        st.session_state["referee_names_drawn_at"] = draw_key
+    elif "referee_names_text" not in st.session_state:
+        st.session_state["referee_names_text"] = "\n".join(existing_referees)
+
+    names_text = st.text_area(
+        "Referee Names",
+        key="referee_names_text",
+        help="一行一位裁判。輸入後頁面會重新整理出每位裁判的設定。",
+    )
+    names = parse_referee_names(names_text)
+    if not names:
+        st.info("先輸入至少一位裁判姓名，再設定所屬隊伍與不可排場次。")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    match_options = build_match_options(latest_draw)
+    match_label_by_no = {match_no: label for label, match_no in match_options.items()}
+    team_options = ["No affiliation"] + list(latest_draw.get("teams", []))
+    collected_referees: list[dict[str, Any]] = []
+
+    with st.form("referee_form"):
+        for index, name in enumerate(names):
+            existing = existing_referees.get(name, {})
+            st.markdown(f"**{name}**")
+            col_a, col_b = st.columns([0.36, 0.64])
+            with col_a:
+                current_team = existing.get("affiliated_team") or "No affiliation"
+                if current_team not in team_options:
+                    current_team = "No affiliation"
+                affiliated_team = st.selectbox(
+                    "Affiliated Team",
+                    team_options,
+                    index=team_options.index(current_team),
+                    key=f"ref_team_{index}_{name}",
+                )
+            with col_b:
+                default_unavailable = [
+                    match_label_by_no[match_no]
+                    for match_no in existing.get("unavailable_match_nos", [])
+                    if match_no in match_label_by_no
+                ]
+                unavailable_labels = st.multiselect(
+                    "Unavailable Matches",
+                    list(match_options),
+                    default=default_unavailable,
+                    key=f"ref_unavailable_{index}_{name}",
+                )
+            collected_referees.append(
+                {
+                    "name": name,
+                    "affiliated_team": "" if affiliated_team == "No affiliation" else affiliated_team,
+                    "unavailable_match_nos": [match_options[label] for label in unavailable_labels],
+                }
+            )
+
+        submitted = st.form_submit_button("Generate Referee Schedule", use_container_width=True)
+
+    warnings = latest_draw.get("referee_warnings", [])
+    if warnings:
+        for warning in warnings:
+            st.warning(warning)
+    elif latest_draw.get("referee_assignments"):
+        st.success("裁判表已產生，Excel 下載檔已包含「裁判」工作表。")
+
+    if submitted:
+        run_referee_assignment(collected_referees, config)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def parse_referee_names(names_text: str) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for line in names_text.splitlines():
+        name = line.strip()
+        if not name or name in seen:
+            continue
+        names.append(name)
+        seen.add(name)
+    return names
+
+
+def build_match_options(draw_data: dict[str, Any]) -> dict[str, int]:
+    options: dict[str, int] = {}
+    for match in draw_data.get("schedule", {}).get("matches", []):
+        match_no = int(match.get("match_no", 0))
+        home = match.get("home", match.get("home_label", ""))
+        away = match.get("away", match.get("away_label", ""))
+        label = f"#{match_no} {match.get('day', '')} {match.get('time', '')} {match.get('field', '')} - {home} vs {away}"
+        options[label] = match_no
+    return options
+
+
+def run_referee_assignment(referees: list[dict[str, Any]], config: dict[str, Any]) -> None:
+    try:
+        latest_draw = get_latest_draw_data(BASE_DIR)
+        if latest_draw is None:
+            raise ValueError("尚未有抽籤結果，請先完成抽籤。")
+        updated_draw = update_draw_referees(latest_draw, referees, config=config)
+        artifacts = generate_artifacts(updated_draw, base_dir=BASE_DIR)
+        if artifacts.latest_sync_complete:
+            st.session_state["message"] = ("success", "裁判排班已完成，Excel 已更新「裁判」工作表。")
+        else:
+            st.session_state["message"] = ("warning", "裁判排班已完成，但 latest 檔案同步可能被 Excel 開啟中擋住。")
+        st.rerun()
+    except Exception as exc:
+        st.session_state["message"] = ("error", str(exc))
+        st.rerun()
 
 
 def run_draw(

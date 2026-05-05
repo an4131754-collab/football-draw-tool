@@ -12,12 +12,14 @@ from tournament_tools import (
     BASE_DIR,
     clear_latest_artifacts,
     create_draw_artifacts,
+    generate_artifacts,
     get_artifact_filenames,
     get_latest_draw_data,
     load_config,
     load_teams,
     normalize_download_options,
     resolve_registration_path,
+    update_draw_referees,
 )
 
 HOST = "127.0.0.1"
@@ -438,6 +440,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 
     input[type="file"],
     input[type="number"],
+    textarea,
     select {
       width: 100%;
       min-height: 52px;
@@ -459,10 +462,19 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     input[type="file"] { cursor: pointer; }
 
     input:focus,
+    textarea:focus,
     select:focus {
       border-color: rgba(214,255,99,0.66);
       background: rgba(255,255,255,0.08);
       box-shadow: 0 0 0 4px rgba(214,255,99,0.1);
+    }
+
+    textarea {
+      min-height: 132px;
+      resize: vertical;
+      line-height: 1.55;
+      text-transform: none;
+      letter-spacing: 0;
     }
 
     .checkbox-row {
@@ -491,6 +503,46 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     }
 
     .checkbox-row input { accent-color: var(--accent); }
+
+    .referee-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .referee-card {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 14px;
+      background: rgba(255,255,255,0.045);
+    }
+
+    .referee-card h3 {
+      margin: 0 0 12px;
+      font-size: 1rem;
+      text-transform: uppercase;
+    }
+
+    .match-checks {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      max-height: 190px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .match-checks label {
+      min-height: auto;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.035);
+      font-size: 0.68rem;
+      line-height: 1.35;
+      letter-spacing: 0.06em;
+      text-transform: none;
+    }
 
     .messages {
       display: grid;
@@ -946,6 +998,41 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
               {% endfor %}
             </div>
 
+            {% if latest_draw.schedule and latest_draw.schedule.status == "scheduled" %}
+              <hr>
+              <div id="referees">
+                <p class="panel-kicker">Referee Setup</p>
+                <h2 style="font-size: clamp(1.5rem, 2.4vw, 2.3rem);">Assign Officials</h2>
+                <p class="note" style="margin-top: 10px;">每場安排 3 位裁判；同一時間不會把同一位裁判排到甲、乙兩場。若有隊伍歸屬，會避開該隊相關比賽。</p>
+                {% if latest_draw.referee_warnings %}
+                  <div class="status infeasible" style="margin-top: 14px;">
+                    <strong>Referee warnings</strong>
+                    {% for warning in latest_draw.referee_warnings %}
+                      <div>{{ warning }}</div>
+                    {% endfor %}
+                  </div>
+                {% elif latest_draw.referee_assignments %}
+                  <div class="status" style="margin-top: 14px;">
+                    <strong>Referee schedule ready</strong>
+                    <div>Excel 下載檔已包含「裁判」工作表。</div>
+                  </div>
+                {% endif %}
+
+                <form method="post" action="{{ url_for('referees') }}" style="margin-top: 18px;">
+                  <label>
+                    Referee Names
+                    <textarea id="refereeNames" name="referee_names" placeholder="一行一位裁判">{{ referee_names_text }}</textarea>
+                    <span class="hint">輸入姓名後，下方會自動產生每位裁判的所屬隊伍與不可排場次設定。</span>
+                  </label>
+                  <input type="hidden" id="refereeCount" name="referee_count" value="0">
+                  <div class="referee-list" id="refereeRows"></div>
+                  <div class="actions" style="margin-top: 18px;">
+                    <button type="submit">Generate Referee Schedule</button>
+                  </div>
+                </form>
+              </div>
+            {% endif %}
+
             <div id="outputs">
               {% if download_items %}
                 <div class="downloads">
@@ -975,6 +1062,71 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
       </div>
     </section>
   </main>
+  <script>
+    const refereeTeams = {{ (latest_draw.teams if latest_draw else []) | tojson }};
+    const refereeMatches = {{ referee_match_options | tojson }};
+    const existingReferees = {{ existing_referees | tojson }};
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[char]);
+    }
+
+    function renderRefereeRows() {
+      const namesInput = document.getElementById("refereeNames");
+      const rows = document.getElementById("refereeRows");
+      const countInput = document.getElementById("refereeCount");
+      if (!namesInput || !rows || !countInput) return;
+
+      const seen = new Set();
+      const names = namesInput.value.split(/\r?\n/)
+        .map(name => name.trim())
+        .filter(name => {
+          if (!name || seen.has(name)) return false;
+          seen.add(name);
+          return true;
+        });
+      countInput.value = names.length;
+
+      rows.innerHTML = names.map((name, index) => {
+        const existing = existingReferees[name] || {};
+        const teamOptions = ["", ...refereeTeams].map(team => {
+          const label = team || "No affiliation";
+          const selected = (existing.affiliated_team || "") === team ? "selected" : "";
+          return `<option value="${escapeHtml(team)}" ${selected}>${escapeHtml(label)}</option>`;
+        }).join("");
+        const unavailable = new Set((existing.unavailable_match_nos || []).map(String));
+        const checks = refereeMatches.map(match => {
+          const checked = unavailable.has(String(match.match_no)) ? "checked" : "";
+          return `<label><input type="checkbox" name="unavailable_${index}" value="${match.match_no}" ${checked}> ${escapeHtml(match.label)}</label>`;
+        }).join("");
+
+        return `
+          <div class="referee-card">
+            <input type="hidden" name="referee_name_${index}" value="${escapeHtml(name)}">
+            <h3>${escapeHtml(name)}</h3>
+            <label>
+              Affiliated Team
+              <select name="affiliated_team_${index}">${teamOptions}</select>
+            </label>
+            <div class="field-label" style="margin-top: 12px;">Unavailable Matches</div>
+            <div class="match-checks">${checks}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      renderRefereeRows();
+      const namesInput = document.getElementById("refereeNames");
+      if (namesInput) namesInput.addEventListener("input", renderRefereeRows);
+    });
+  </script>
 </body>
 </html>
 """
@@ -1018,6 +1170,9 @@ def index() -> str:
         defaults=defaults,
         latest_draw=latest_draw,
         download_items=build_download_items(latest_draw),
+        referee_match_options=build_referee_match_options(latest_draw),
+        existing_referees=build_existing_referees(latest_draw),
+        referee_names_text=build_referee_names_text(latest_draw),
         day1_latest_end_options=config["latest_end_options"]["DAY1"],
         day2_latest_end_options=config["latest_end_options"]["DAY2"],
         teams=teams,
@@ -1063,6 +1218,32 @@ def draw() -> Any:
         flash(str(exc), "error")
 
     return redirect(url_for("index"))
+
+
+@app.post("/referees")
+def referees() -> Any:
+    try:
+        latest_draw = get_latest_draw_data(BASE_DIR)
+        if latest_draw is None:
+            raise ValueError("尚未有抽籤結果，請先完成抽籤。")
+
+        referee_payload = parse_referees_from_request()
+        with STATE_LOCK:
+            updated_draw = update_draw_referees(
+                latest_draw,
+                referee_payload,
+                config=load_config(BASE_DIR),
+            )
+            artifacts = generate_artifacts(updated_draw, base_dir=BASE_DIR)
+
+        if artifacts.latest_sync_complete:
+            flash("裁判排班已完成，Excel 已更新「裁判」工作表。", "success")
+        else:
+            flash("裁判排班已完成，但 latest 檔案可能因 Excel 開啟中而無法同步。", "error")
+    except Exception as exc:
+        flash(str(exc), "error")
+
+    return redirect(url_for("index") + "#referees")
 
 
 @app.post("/clear")
@@ -1147,6 +1328,61 @@ def parse_download_options() -> dict[str, bool]:
         "schedule": request.form.get("generate_excel") == "1",
         "pdf": request.form.get("generate_pdf") == "1",
     }
+
+
+def parse_referees_from_request() -> list[dict[str, Any]]:
+    try:
+        referee_count = int(request.form.get("referee_count", "0"))
+    except ValueError as exc:
+        raise ValueError("裁判數量格式錯誤。") from exc
+
+    referees: list[dict[str, Any]] = []
+    for index in range(referee_count):
+        name = request.form.get(f"referee_name_{index}", "").strip()
+        if not name:
+            continue
+        unavailable_values = request.form.getlist(f"unavailable_{index}")
+        referees.append(
+            {
+                "name": name,
+                "affiliated_team": request.form.get(f"affiliated_team_{index}", "").strip(),
+                "unavailable_match_nos": unavailable_values,
+            }
+        )
+
+    if not referees:
+        names_text = request.form.get("referee_names", "")
+        referees = [{"name": line.strip()} for line in names_text.splitlines() if line.strip()]
+    return referees
+
+
+def build_referee_match_options(latest_draw: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if latest_draw is None:
+        return []
+    options: list[dict[str, Any]] = []
+    for match in latest_draw.get("schedule", {}).get("matches", []):
+        match_no = int(match.get("match_no", 0))
+        home = match.get("home", match.get("home_label", ""))
+        away = match.get("away", match.get("away_label", ""))
+        options.append(
+            {
+                "match_no": match_no,
+                "label": f"#{match_no} {match.get('day', '')} {match.get('time', '')} {match.get('field', '')} - {home} vs {away}",
+            }
+        )
+    return options
+
+
+def build_existing_referees(latest_draw: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if latest_draw is None:
+        return {}
+    return {item.get("name", ""): item for item in latest_draw.get("referees", []) if item.get("name")}
+
+
+def build_referee_names_text(latest_draw: dict[str, Any] | None) -> str:
+    if latest_draw is None:
+        return ""
+    return "\n".join(item.get("name", "") for item in latest_draw.get("referees", []) if item.get("name"))
 
 
 def selected_output_labels(download_options: dict[str, bool]) -> str:

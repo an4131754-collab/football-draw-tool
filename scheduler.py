@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from tournament_tools import (
@@ -10,6 +11,7 @@ from tournament_tools import (
     load_config,
     load_draw_data,
     normalize_download_options,
+    update_draw_referees,
     update_draw_runtime_options,
 )
 
@@ -44,6 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--outputs",
         help="要公開產生的下載項目，逗號分隔：json,pdf,excel。未指定時沿用 JSON 內設定。",
     )
+    parser.add_argument(
+        "--referees",
+        help="裁判設定 JSON 路徑，可為 list 或包含 referees 欄位的 object。",
+    )
     return parser
 
 
@@ -71,6 +77,16 @@ def parse_outputs(value: str | None) -> dict[str, bool] | None:
     )
 
 
+def load_referees_file(path: Path) -> list[dict[str, object]]:
+    with path.open("r", encoding="utf-8") as file_handle:
+        payload = json.load(file_handle)
+    if isinstance(payload, dict):
+        payload = payload.get("referees", [])
+    if not isinstance(payload, list):
+        raise ValueError("--referees 必須是 JSON list，或包含 referees list 的 object。")
+    return payload
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -88,6 +104,12 @@ def main() -> int:
         day1_latest_end=args.day1_latest_end,
         day2_latest_end=args.day2_latest_end,
     )
+    if args.referees:
+        draw_data = update_draw_referees(
+            draw_data,
+            load_referees_file(resolve_path(args.referees)),
+            config=config,
+        )
 
     if args.pdf_only:
         pdf_path, latest_pdf_path, pdf_synced = generate_pdf_only(

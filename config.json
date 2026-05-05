@@ -54,6 +54,8 @@
     "甲",
     "乙"
   ],
+  "referees_per_match": 3,
+  "referee_sheet_name": "裁判",
   "match_duration_minutes": 45,
   "max_matches_per_team_per_day": 3,
   "final_preferred_start": "14:00",

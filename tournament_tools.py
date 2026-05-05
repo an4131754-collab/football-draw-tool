@@ -38,6 +38,7 @@ GROUP_LABELS = tuple(chr(ord("A") + index) for index in range(26))
 TEMPLATE_GROUPS = ("A", "B", "C", "D")
 AVAILABLE_OUTPUTS = ("json", "schedule", "pdf")
 DEFAULT_DOWNLOAD_OPTIONS = {"json": True, "schedule": True, "pdf": True}
+REFEREE_SHEET_NAME = "裁判"
 
 GROUP_SUMMARY_CELLS = {
     "A": ("L3", "M3", "N3", "O3"),
@@ -106,6 +107,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "reserve_cells": ["B18", "D18", "E18", "G18", "I18", "J18"],
     "pdf_title": "114學年度足球系際盃抽籤隨機性說明",
     "fields": ["甲", "乙"],
+    "referees_per_match": 3,
+    "referee_sheet_name": REFEREE_SHEET_NAME,
     "match_duration_minutes": 45,
     "max_matches_per_team_per_day": 3,
     "final_preferred_start": "14:00",
@@ -476,6 +479,292 @@ def update_draw_runtime_options(
     return updated
 
 
+def update_draw_referees(
+    draw_data: dict[str, Any],
+    referees: list[Any] | dict[str, Any] | str,
+    *,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    config = config or load_config(BASE_DIR)
+    updated = deepcopy(draw_data)
+    updated["download_options"] = normalize_download_options(updated.get("download_options"))
+    updated["download_options"]["json"] = True
+    updated["download_options"]["schedule"] = True
+
+    normalized_referees = normalize_referees(referees, updated.get("teams", []))
+    assignments, warnings = assign_referees(updated, normalized_referees, config)
+    updated["referees"] = normalized_referees
+    updated["referee_assignments"] = assignments
+    updated["referee_warnings"] = warnings
+    updated["referees_per_match"] = int(config.get("referees_per_match", 3))
+    return updated
+
+
+def normalize_referees(referees: list[Any] | dict[str, Any] | str, teams: list[str]) -> list[dict[str, Any]]:
+    if isinstance(referees, dict):
+        referees = referees.get("referees", [])
+    elif isinstance(referees, str):
+        referees = [{"name": line.strip()} for line in referees.splitlines() if line.strip()]
+
+    if referees is None:
+        referees = []
+
+    valid_teams = set(teams)
+    normalized: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+
+    for item in referees:
+        if isinstance(item, str):
+            raw_item = {"name": item}
+        elif isinstance(item, dict):
+            raw_item = dict(item)
+        else:
+            raise ValueError("裁判資料格式必須是姓名或包含 name 的物件。")
+
+        name = str(raw_item.get("name", "")).strip()
+        if not name:
+            continue
+        if name in seen_names:
+            raise ValueError(f"裁判姓名重複：{name}")
+        seen_names.add(name)
+
+        affiliated_team = str(raw_item.get("affiliated_team") or raw_item.get("team") or "").strip()
+        if affiliated_team and affiliated_team not in valid_teams:
+            raise ValueError(f"{name} 的所屬隊伍不在本次隊伍名單內：{affiliated_team}")
+
+        normalized.append(
+            {
+                "name": name,
+                "affiliated_team": affiliated_team,
+                "unavailable_match_nos": parse_match_numbers(raw_item.get("unavailable_match_nos", [])),
+            }
+        )
+
+    return normalized
+
+
+def parse_match_numbers(value: Any) -> list[int]:
+    if value is None or value == "":
+        return []
+
+    if isinstance(value, str):
+        normalized = value.replace("，", ",").replace("、", ",").replace(";", ",").replace("\n", ",")
+        parts = [part.strip().lstrip("#") for part in normalized.split(",") if part.strip()]
+    elif isinstance(value, (list, tuple, set)):
+        parts = list(value)
+    else:
+        parts = [value]
+
+    match_numbers: set[int] = set()
+    for part in parts:
+        try:
+            match_no = int(part)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"不可排場次必須是數字：{part}") from exc
+        if match_no <= 0:
+            raise ValueError(f"不可排場次必須大於 0：{match_no}")
+        match_numbers.add(match_no)
+    return sorted(match_numbers)
+
+
+def assign_referees(
+    draw_data: dict[str, Any],
+    referees: list[dict[str, Any]],
+    config: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    schedule = draw_data.get("schedule", {})
+    matches = schedule.get("matches", [])
+    referees_per_match = int(config.get("referees_per_match", 3))
+
+    if schedule.get("status") != "scheduled" or not matches:
+        return [], ["賽程尚未成功安排，無法產生裁判排班。"]
+    if referees_per_match <= 0:
+        return [], ["每場裁判人數必須大於 0。"]
+    if not referees:
+        return [], ["尚未輸入裁判名單，裁判表會保留空白。"]
+
+    field_order = {field: index for index, field in enumerate(config.get("fields", []))}
+    ordered_matches = sorted(matches, key=lambda match: match_sort_key(match, field_order))
+    possible_teams_by_match = build_possible_teams_by_match(draw_data, ordered_matches)
+
+    assignment_counts = {referee["name"]: 0 for referee in referees}
+    day_counts: dict[tuple[str, str], int] = {}
+    last_time_index: dict[tuple[str, str], int] = {}
+    busy_by_time: dict[tuple[str, Any], set[str]] = {}
+    assignments: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    for match in ordered_matches:
+        match_no = int(match.get("match_no", 0))
+        day = str(match.get("day", ""))
+        time_index = match.get("time_index", match.get("time", ""))
+        busy_key = (day, time_index)
+        busy_names = busy_by_time.setdefault(busy_key, set())
+        possible_teams = possible_teams_by_match.get(match_no, set())
+        assigned_names: list[str] = []
+
+        for _slot_index in range(referees_per_match):
+            candidate = choose_referee_candidate(
+                referees,
+                match_no=match_no,
+                day=day,
+                time_index=time_index,
+                possible_teams=possible_teams,
+                assigned_names=set(assigned_names),
+                busy_names=busy_names,
+                assignment_counts=assignment_counts,
+                day_counts=day_counts,
+                last_time_index=last_time_index,
+            )
+            if candidate is None:
+                break
+
+            name = candidate["name"]
+            assigned_names.append(name)
+            busy_names.add(name)
+            assignment_counts[name] += 1
+            day_counts[(name, day)] = day_counts.get((name, day), 0) + 1
+            if isinstance(time_index, int):
+                last_time_index[(name, day)] = time_index
+
+        missing_count = referees_per_match - len(assigned_names)
+        if missing_count > 0:
+            warnings.append(f"第 {match_no} 場可用裁判不足，尚缺 {missing_count} 位。")
+
+        assignments.append(
+            {
+                "match_no": match_no,
+                "day": day,
+                "time": match.get("time", ""),
+                "time_index": time_index,
+                "field": match.get("field", ""),
+                "stage": match.get("stage", ""),
+                "stage_code": match.get("stage_code", ""),
+                "group": match.get("group", ""),
+                "home": match.get("home", match.get("home_label", "")),
+                "away": match.get("away", match.get("away_label", "")),
+                "home_label": match.get("home_label", match.get("home", "")),
+                "away_label": match.get("away_label", match.get("away", "")),
+                "referees": assigned_names,
+                "missing_count": missing_count,
+                "possible_teams": sorted(possible_teams),
+            }
+        )
+
+    return assignments, warnings
+
+
+def choose_referee_candidate(
+    referees: list[dict[str, Any]],
+    *,
+    match_no: int,
+    day: str,
+    time_index: Any,
+    possible_teams: set[str],
+    assigned_names: set[str],
+    busy_names: set[str],
+    assignment_counts: dict[str, int],
+    day_counts: dict[tuple[str, str], int],
+    last_time_index: dict[tuple[str, str], int],
+) -> dict[str, Any] | None:
+    best_referee: dict[str, Any] | None = None
+    best_score: tuple[int, int, int, str] | None = None
+
+    for referee in referees:
+        name = referee["name"]
+        if name in assigned_names or name in busy_names:
+            continue
+        if match_no in set(referee.get("unavailable_match_nos", [])):
+            continue
+
+        affiliated_team = referee.get("affiliated_team", "")
+        if affiliated_team and affiliated_team in possible_teams:
+            continue
+
+        consecutive_penalty = 0
+        if isinstance(time_index, int) and last_time_index.get((name, day)) == time_index - 1:
+            consecutive_penalty = 1
+
+        score = (
+            assignment_counts.get(name, 0),
+            day_counts.get((name, day), 0),
+            consecutive_penalty,
+            name,
+        )
+        if best_score is None or score < best_score:
+            best_referee = referee
+            best_score = score
+
+    return best_referee
+
+
+def match_sort_key(match: dict[str, Any], field_order: dict[str, int]) -> tuple[int, int, int, int]:
+    day_order = {"DAY1": 1, "DAY2": 2}
+    time_index = match.get("time_index")
+    if not isinstance(time_index, int):
+        time_index = 999
+    return (
+        day_order.get(str(match.get("day", "")), 99),
+        time_index,
+        field_order.get(match.get("field", ""), 99),
+        int(match.get("match_no", 9999)),
+    )
+
+
+def build_possible_teams_by_match(
+    draw_data: dict[str, Any],
+    ordered_matches: list[dict[str, Any]],
+) -> dict[int, set[str]]:
+    groups = draw_data.get("groups", {})
+    all_teams = set(draw_data.get("teams", []))
+    token_possible: dict[str, set[str]] = {}
+    possible_by_match: dict[int, set[str]] = {}
+
+    for match in ordered_matches:
+        match_no = int(match.get("match_no", 0))
+        if match.get("stage_code") == "group":
+            possible = {
+                value
+                for value in (match.get("home"), match.get("away"))
+                if isinstance(value, str) and value
+            }
+        else:
+            possible = set()
+            for token in (match.get("home"), match.get("away"), match.get("home_label"), match.get("away_label")):
+                possible.update(resolve_possible_teams(str(token or ""), groups, all_teams, token_possible))
+
+        possible_by_match[match_no] = possible
+        if match_no:
+            token_possible[f"{match_no}W"] = set(possible)
+            token_possible[f"{match_no}L"] = set(possible)
+        for token_key in ("winner_label", "loser_label"):
+            token = str(match.get(token_key) or "")
+            if token:
+                token_possible[token] = set(possible)
+
+    return possible_by_match
+
+
+def resolve_possible_teams(
+    token: str,
+    groups: dict[str, list[str]],
+    all_teams: set[str],
+    token_possible: dict[str, set[str]],
+) -> set[str]:
+    if not token:
+        return set()
+    if token in token_possible:
+        return set(token_possible[token])
+    if token.startswith("Best"):
+        return set(all_teams)
+    for group_name, group_teams in groups.items():
+        if token.startswith(group_name) and token[len(group_name) :].isdigit():
+            return set(group_teams)
+    if token in all_teams:
+        return {token}
+    return set(all_teams)
+
+
 def build_schedule_data(
     draw_data: dict[str, Any],
     config: dict[str, Any],
@@ -582,7 +871,7 @@ def build_schedule_data(
         )
     warnings.extend(knockout_warnings)
 
-    matches = assign_match_numbers(scheduled_group_matches + scheduled_knockout)
+    matches = assign_match_numbers(scheduled_group_matches + scheduled_knockout, fields=fields)
     messages.append(
         f"已排定小組賽 {len(scheduled_group_matches)} 場、淘汰賽 {len(scheduled_knockout)} 場。"
     )
@@ -1063,12 +1352,14 @@ def find_available_final_index(
     return None
 
 
-def assign_match_numbers(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def assign_match_numbers(matches: list[dict[str, Any]], fields: list[str] | None = None) -> list[dict[str, Any]]:
+    field_order = {field: index for index, field in enumerate(fields or [])}
     sorted_matches = sorted(
         matches,
         key=lambda item: (
             item.get("day", ""),
             int(item.get("time_index", 0)),
+            field_order.get(item.get("field", ""), 99),
             str(item.get("field", "")),
             stage_sort_order(str(item.get("stage_code", ""))),
         ),
@@ -1369,6 +1660,7 @@ def build_template_schedule_workbook(
         for cell_name in config["reserve_cells"]:
             sheet[cell_name] = None
 
+    write_referee_sheet_if_needed(workbook, draw_data, config)
     workbook.save(output_path)
 
 
@@ -1416,6 +1708,7 @@ def build_dynamic_schedule_workbook(draw_data: dict[str, Any], output_path: Path
     write_group_sheet(group_sheet, draw_data, config)
     write_schedule_sheet(schedule_sheet, draw_data)
     write_warning_sheet(warning_sheet, draw_data)
+    write_referee_sheet_if_needed(workbook, draw_data, config)
     workbook.save(output_path)
 
 
@@ -1495,6 +1788,174 @@ def write_schedule_sheet(sheet: Any, draw_data: dict[str, Any]) -> None:
     widths = [8, 10, 16, 8, 12, 8, 22, 22, 28]
     for column_index, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(column_index)].width = width
+
+
+def write_referee_sheet_if_needed(workbook: Any, draw_data: dict[str, Any], config: dict[str, Any]) -> None:
+    if "referees" not in draw_data and "referee_assignments" not in draw_data:
+        return
+
+    sheet_name = str(config.get("referee_sheet_name", REFEREE_SHEET_NAME))
+    if sheet_name in workbook.sheetnames:
+        del workbook[sheet_name]
+
+    sheet = workbook.create_sheet(sheet_name)
+    write_referee_sheet(sheet, draw_data, config)
+
+
+def write_referee_sheet(sheet: Any, draw_data: dict[str, Any], config: dict[str, Any]) -> None:
+    title = str(config.get("schedule_title", "")).replace("賽程表", "裁判表")
+    sheet["A1"] = title or "裁判表"
+    sheet["A1"].font = Font(bold=True, size=16)
+
+    assignments = {int(item.get("match_no", 0)): item for item in draw_data.get("referee_assignments", [])}
+    matches = draw_data.get("schedule", {}).get("matches", [])
+    fields = list(config.get("fields", []))[:2]
+    if len(fields) < 2:
+        fields = fields + [f"Field {index + 1}" for index in range(len(fields), 2)]
+
+    header_fill = PatternFill("solid", fgColor="DDEBDD")
+    section_fill = PatternFill("solid", fgColor="EFF6EF")
+    thin_border = Border(bottom=Side(style="thin", color="A8B9A8"))
+    center = Alignment(horizontal="center", vertical="center")
+
+    current_row = 2
+    for day in ordered_schedule_days(draw_data):
+        time_rows = referee_time_rows_for_day(draw_data, day)
+        if not time_rows:
+            continue
+
+        sheet.cell(row=current_row, column=2).value = day
+        sheet.cell(row=current_row, column=2).font = Font(bold=True, size=13)
+        current_row += 1
+
+        for column_index, value in ((3, fields[0]), (7, fields[1])):
+            cell = sheet.cell(row=current_row, column=column_index)
+            cell.value = value
+            cell.font = Font(bold=True)
+            cell.alignment = center
+            cell.fill = section_fill
+        current_row += 1
+
+        for time_row in time_rows:
+            sheet.cell(row=current_row, column=1).value = time_row["time"]
+            sheet.cell(row=current_row, column=1).alignment = center
+
+            for field_index, field in enumerate(fields):
+                start_column = 2 if field_index == 0 else 6
+                match = find_match_for_referee_row(matches, day, time_row, field)
+                if match is None:
+                    continue
+
+                match_no = int(match.get("match_no", 0))
+                assignment = assignments.get(match_no, {})
+                sheet.cell(row=current_row, column=start_column).value = match_no
+                sheet.cell(row=current_row, column=start_column).alignment = center
+                for offset in range(int(config.get("referees_per_match", 3))):
+                    referee_name = ""
+                    if offset < len(assignment.get("referees", [])):
+                        referee_name = assignment["referees"][offset]
+                    sheet.cell(row=current_row, column=start_column + 1 + offset).value = referee_name
+                    sheet.cell(row=current_row, column=start_column + 1 + offset).alignment = center
+
+            current_row += 1
+
+        current_row += 1
+
+    warning_row = current_row + 1
+    referee_warnings = list(draw_data.get("referee_warnings", []))
+    if referee_warnings:
+        sheet.cell(row=warning_row, column=1).value = "裁判排班提醒"
+        sheet.cell(row=warning_row, column=1).font = Font(bold=True)
+        for offset, warning in enumerate(referee_warnings, start=1):
+            sheet.cell(row=warning_row + offset, column=1).value = warning
+        current_row = warning_row + len(referee_warnings) + 2
+
+    if draw_data.get("referees"):
+        counts = referee_assignment_counts(draw_data.get("referee_assignments", []))
+        sheet.cell(row=current_row, column=1).value = "裁判分配統計"
+        sheet.cell(row=current_row, column=1).font = Font(bold=True)
+        sheet.cell(row=current_row + 1, column=1).value = "姓名"
+        sheet.cell(row=current_row + 1, column=2).value = "所屬隊伍"
+        sheet.cell(row=current_row + 1, column=3).value = "分配場數"
+        for column_index in range(1, 4):
+            cell = sheet.cell(row=current_row + 1, column=column_index)
+            cell.font = Font(bold=True)
+            cell.fill = header_fill
+            cell.border = thin_border
+        for row_offset, referee in enumerate(draw_data["referees"], start=2):
+            sheet.cell(row=current_row + row_offset, column=1).value = referee["name"]
+            sheet.cell(row=current_row + row_offset, column=2).value = referee.get("affiliated_team", "")
+            sheet.cell(row=current_row + row_offset, column=3).value = counts.get(referee["name"], 0)
+
+    widths = [16, 8, 16, 16, 16, 8, 16, 16, 16, 18, 18]
+    for column_index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(column_index)].width = width
+
+    for row in sheet.iter_rows(min_row=1, max_row=max(sheet.max_row, 1), min_col=1, max_col=9):
+        for cell in row:
+            if cell.value is not None:
+                cell.border = thin_border
+
+
+def ordered_schedule_days(draw_data: dict[str, Any]) -> list[str]:
+    day_slots = draw_data.get("schedule", {}).get("day_slots", {})
+    days = list(day_slots)
+    for match in draw_data.get("schedule", {}).get("matches", []):
+        day = str(match.get("day", ""))
+        if day and day not in days:
+            days.append(day)
+    return sorted(days, key=lambda day: {"DAY1": 1, "DAY2": 2}.get(day, 99))
+
+
+def referee_time_rows_for_day(draw_data: dict[str, Any], day: str) -> list[dict[str, Any]]:
+    day_slots = draw_data.get("schedule", {}).get("day_slots", {})
+    rows = list(day_slots.get(day, []))
+    if rows:
+        return rows
+
+    grouped: dict[tuple[Any, str], dict[str, Any]] = {}
+    for match in draw_data.get("schedule", {}).get("matches", []):
+        if match.get("day") != day:
+            continue
+        key = (match.get("time_index", 999), str(match.get("time", "")))
+        grouped.setdefault(
+            key,
+            {
+                "day": day,
+                "time_index": match.get("time_index", 999),
+                "time": match.get("time", ""),
+                "fields": [],
+            },
+        )
+        if match.get("field") not in grouped[key]["fields"]:
+            grouped[key]["fields"].append(match.get("field"))
+    return [grouped[key] for key in sorted(grouped)]
+
+
+def find_match_for_referee_row(
+    matches: list[dict[str, Any]],
+    day: str,
+    time_row: dict[str, Any],
+    field: str,
+) -> dict[str, Any] | None:
+    for match in matches:
+        if match.get("day") != day:
+            continue
+        if match.get("field") != field:
+            continue
+        if "time_index" in time_row and match.get("time_index") == time_row.get("time_index"):
+            return match
+        if match.get("time") == time_row.get("time"):
+            return match
+    return None
+
+
+def referee_assignment_counts(assignments: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for assignment in assignments:
+        for referee_name in assignment.get("referees", []):
+            counts[referee_name] = counts.get(referee_name, 0) + 1
+    return counts
 
 
 def write_warning_sheet(sheet: Any, draw_data: dict[str, Any]) -> None:
