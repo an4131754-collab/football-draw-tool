@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 from pathlib import Path, PureWindowsPath
 from typing import Any
@@ -699,46 +700,36 @@ def render_referee_panel(latest_draw: dict[str, Any], config: dict[str, Any]) ->
         return
 
     match_options = build_match_options(latest_draw)
-    match_label_by_no = {match_no: label for label, match_no in match_options.items()}
     team_options = ["No affiliation"] + list(latest_draw.get("teams", []))
-    collected_referees: list[dict[str, Any]] = []
+    editor_rows = build_referee_editor_rows(names, existing_referees)
+    editor_signature = hashlib.sha1((draw_key + "|" + "|".join(names)).encode("utf-8")).hexdigest()[:12]
 
-    with st.form("referee_form"):
-        for index, name in enumerate(names):
-            existing = existing_referees.get(name, {})
-            st.markdown(f"**{name}**")
-            col_a, col_b = st.columns([0.36, 0.64])
-            with col_a:
-                current_team = existing.get("affiliated_team") or "No affiliation"
-                if current_team not in team_options:
-                    current_team = "No affiliation"
-                affiliated_team = st.selectbox(
-                    "Affiliated Team",
-                    team_options,
-                    index=team_options.index(current_team),
-                    key=f"ref_team_{index}_{name}",
-                )
-            with col_b:
-                default_unavailable = [
-                    match_label_by_no[match_no]
-                    for match_no in existing.get("unavailable_match_nos", [])
-                    if match_no in match_label_by_no
-                ]
-                unavailable_labels = st.multiselect(
-                    "Unavailable Matches",
-                    list(match_options),
-                    default=default_unavailable,
-                    key=f"ref_unavailable_{index}_{name}",
-                )
-            collected_referees.append(
-                {
-                    "name": name,
-                    "affiliated_team": "" if affiliated_team == "No affiliation" else affiliated_team,
-                    "unavailable_match_nos": [match_options[label] for label in unavailable_labels],
-                }
-            )
+    st.caption("在表格的 Affiliated Team 欄位選擇裁判所屬隊伍；沒有隊伍就保持 No affiliation。Unavailable Matches 請輸入不能排的場次號，例如 1,2,13。")
+    edited_rows = st.data_editor(
+        editor_rows,
+        key=f"referee_editor_{editor_signature}",
+        hide_index=True,
+        use_container_width=True,
+        disabled=["name"],
+        column_config={
+            "name": st.column_config.TextColumn("Name", width="medium"),
+            "affiliated_team": st.column_config.SelectboxColumn(
+                "Affiliated Team",
+                options=team_options,
+                width="medium",
+            ),
+            "unavailable_match_nos": st.column_config.TextColumn(
+                "Unavailable Matches",
+                help="輸入場次號，逗號分隔，例如 1,2,13。",
+                width="large",
+            ),
+        },
+    )
 
-        submitted = st.form_submit_button("Generate Referee Schedule", use_container_width=True)
+    with st.expander("Match Number Reference", expanded=False):
+        st.dataframe(build_match_reference_rows(match_options), hide_index=True, use_container_width=True)
+
+    submitted = st.button("Generate Referee Schedule", use_container_width=True)
 
     warnings = latest_draw.get("referee_warnings", [])
     if warnings:
@@ -748,7 +739,7 @@ def render_referee_panel(latest_draw: dict[str, Any], config: dict[str, Any]) ->
         st.success("裁判表已產生，Excel 下載檔已包含「裁判」工作表。")
 
     if submitted:
-        run_referee_assignment(collected_referees, config)
+        run_referee_assignment(parse_referee_editor_rows(edited_rows), config)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -774,6 +765,50 @@ def build_match_options(draw_data: dict[str, Any]) -> dict[str, int]:
         label = f"#{match_no} {match.get('day', '')} {match.get('time', '')} {match.get('field', '')} - {home} vs {away}"
         options[label] = match_no
     return options
+
+
+def build_referee_editor_rows(names: list[str], existing_referees: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for name in names:
+        existing = existing_referees.get(name, {})
+        unavailable = existing.get("unavailable_match_nos", [])
+        rows.append(
+            {
+                "name": name,
+                "affiliated_team": existing.get("affiliated_team") or "No affiliation",
+                "unavailable_match_nos": ",".join(str(match_no) for match_no in unavailable),
+            }
+        )
+    return rows
+
+
+def parse_referee_editor_rows(rows: Any) -> list[dict[str, Any]]:
+    if hasattr(rows, "to_dict"):
+        rows = rows.to_dict("records")
+
+    referees: list[dict[str, Any]] = []
+    for row in rows:
+        name = str(row.get("name", "")).strip()
+        if not name:
+            continue
+        affiliated_team = str(row.get("affiliated_team", "")).strip()
+        if affiliated_team == "No affiliation":
+            affiliated_team = ""
+        referees.append(
+            {
+                "name": name,
+                "affiliated_team": affiliated_team,
+                "unavailable_match_nos": row.get("unavailable_match_nos", ""),
+            }
+        )
+    return referees
+
+
+def build_match_reference_rows(match_options: dict[str, int]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for label, match_no in match_options.items():
+        rows.append({"Match No.": match_no, "Match": label})
+    return rows
 
 
 def run_referee_assignment(referees: list[dict[str, Any]], config: dict[str, Any]) -> None:
