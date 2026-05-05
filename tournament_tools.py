@@ -1986,10 +1986,7 @@ def build_existing_schedule_workbook(draw_data: dict[str, Any], output_path: Pat
     elif draw_data.get("_existing_schedule_template_bytes"):
         workbook = load_workbook(io.BytesIO(draw_data["_existing_schedule_template_bytes"]))
     else:
-        workbook = Workbook()
-        schedule_sheet = workbook.active
-        schedule_sheet.title = "賽程"
-        write_schedule_sheet(schedule_sheet, draw_data)
+        raise ValueError("既有賽程模式需要原始 Excel 才能保留你的賽程表。請重新上傳已排好的賽程後再產生裁判表。")
 
     write_referee_sheet_if_needed(workbook, draw_data, config)
     workbook.save(output_path)
