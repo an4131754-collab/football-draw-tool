@@ -522,31 +522,31 @@ def render_setup_panel(config: dict[str, Any], latest_draw: dict[str, Any] | Non
     st.markdown('<div class="lux-panel">', unsafe_allow_html=True)
     st.markdown(
         '<p class="kicker">Configure</p>'
-        '<h2 class="section-title">Draw Setup</h2>'
-        '<p class="muted">像選商品尺寸一樣設定抽籤規格。沒有上傳檔案時，會使用本機 fallback 報名表。</p>',
+        '<h2 class="section-title">抽籤設定</h2>'
+        '<p class="muted">上傳報名表 Excel，設定組數、晉級規則與輸出格式；如果沒有上傳，會使用本機 fallback 報名表。</p>',
         unsafe_allow_html=True,
     )
 
     with st.form("draw_form"):
-        uploaded_file = st.file_uploader("Upload Excel", type=["xlsx", "xlsm"], help=f"隊名欄位預設讀取「{config['team_column']}」。")
-        group_count = st.number_input("Group Count", min_value=2, max_value=int(config["max_group_count"]), value=defaults["group_count"], step=1)
-        advance_per_group = st.number_input("Advance Per Group", min_value=1, value=defaults["advance_per_group"], step=1)
-        wildcard_count = st.number_input("Wildcard Teams", min_value=0, value=defaults["wildcard_count"], step=1)
+        uploaded_file = st.file_uploader("上傳報名表 Excel", type=["xlsx", "xlsm"], help=f"隊名欄位預設讀取「{config['team_column']}」。")
+        group_count = st.number_input("組數", min_value=2, max_value=int(config["max_group_count"]), value=defaults["group_count"], step=1)
+        advance_per_group = st.number_input("每組晉級幾隊", min_value=1, value=defaults["advance_per_group"], step=1)
+        wildcard_count = st.number_input("外卡晉級隊數", min_value=0, value=defaults["wildcard_count"], step=1)
 
         knockout_label_to_value = {
-            "Semifinal - 4 teams advance": "semifinal",
-            "Quarterfinal - 8 teams advance": "quarterfinal",
+            "直接四強 - 4 隊晉級": "semifinal",
+            "八強賽 - 8 隊晉級": "quarterfinal",
         }
         knockout_labels = list(knockout_label_to_value)
         default_knockout_label = label_for_value(knockout_label_to_value, defaults["knockout_format"])
-        knockout_format_label = st.selectbox("Knockout Format", knockout_labels, index=knockout_labels.index(default_knockout_label))
+        knockout_format_label = st.selectbox("淘汰賽格式", knockout_labels, index=knockout_labels.index(default_knockout_label))
 
         day1_options = list(config["latest_end_options"]["DAY1"])
         day2_options = list(config["latest_end_options"]["DAY2"])
-        day1_latest_end = st.selectbox("DAY1 Latest Finish", day1_options, index=option_index(day1_options, defaults["day1_latest_end"]))
-        day2_latest_end = st.selectbox("DAY2 Latest Finish", day2_options, index=option_index(day2_options, defaults["day2_latest_end"]))
+        day1_latest_end = st.selectbox("DAY1 最晚結束時間", day1_options, index=option_index(day1_options, defaults["day1_latest_end"]))
+        day2_latest_end = st.selectbox("DAY2 最晚結束時間", day2_options, index=option_index(day2_options, defaults["day2_latest_end"]))
 
-        st.markdown('<p class="kicker" style="margin-top: .4rem;">Output Pack</p>', unsafe_allow_html=True)
+        st.markdown('<p class="kicker" style="margin-top: .4rem;">輸出檔案</p>', unsafe_allow_html=True)
         output_col_1, output_col_2, output_col_3 = st.columns(3)
         with output_col_1:
             generate_json = st.checkbox("JSON", value=latest_download_options["json"])
@@ -555,7 +555,7 @@ def render_setup_panel(config: dict[str, Any], latest_draw: dict[str, Any] | Non
         with output_col_3:
             generate_pdf = st.checkbox("PDF", value=latest_download_options["pdf"])
 
-        submitted = st.form_submit_button("Start Draw")
+        submitted = st.form_submit_button("開始抽籤")
 
     if submitted:
         run_draw(
@@ -574,13 +574,33 @@ def render_setup_panel(config: dict[str, Any], latest_draw: dict[str, Any] | Non
         )
 
     st.divider()
-    st.markdown('<p class="kicker">Local Fallback</p><h2 class="section-title" style="font-size:2.2rem;">Team List</h2>', unsafe_allow_html=True)
+    render_existing_schedule_panel(config)
+
+    st.divider()
+    st.markdown('<p class="kicker">Local Fallback</p><h2 class="section-title" style="font-size:2.2rem;">本機隊伍名單</h2>', unsafe_allow_html=True)
     if teams:
         st.markdown(f'<p class="muted">目前本機報名表讀到 {len(teams)} 隊。上傳檔案時，會以上傳檔案為準。</p>', unsafe_allow_html=True)
         render_team_chips(teams)
     else:
         st.markdown(f'<p class="muted">{teams_error or "尚未讀到本機報名表，請直接上傳 Excel 後抽籤。"}</p>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_existing_schedule_panel(config: dict[str, Any]) -> None:
+    st.markdown(
+        '<p class="kicker">Referee Only</p>'
+        '<h2 class="section-title" style="font-size:2.2rem;">既有賽程只排裁判</h2>'
+        '<p class="muted">如果你已經自己排好賽程，可以在這裡上傳 Excel。系統只會新增或更新「裁判」工作表，不會重新抽籤或改你的賽程。</p>',
+        unsafe_allow_html=True,
+    )
+
+    with st.form("existing_schedule_form"):
+        schedule_file = st.file_uploader("上傳已排好的賽程 Excel", type=["xlsx", "xlsm"], key="existing_schedule_file")
+        referee_names = st.text_area("裁判名單", help="一行一位裁判；產生後可在右側結果區繼續設定所屬隊伍與不可排場次。")
+        submitted = st.form_submit_button("讀取賽程並建立裁判設定")
+
+    if submitted:
+        run_existing_schedule_referee_mode(schedule_file, referee_names, config)
 
 
 def render_results_panel(latest_draw: dict[str, Any] | None) -> None:
@@ -590,9 +610,9 @@ def render_results_panel(latest_draw: dict[str, Any] | None) -> None:
             """
             <div style="min-height: 520px; display:grid; place-items:center; text-align:center;">
               <div>
-                <p class="kicker">No Draw Yet</p>
-                <h2 class="section-title">Ready when the teams are.</h2>
-                <p class="muted">左側上傳 Excel 並開始抽籤後，這裡會顯示分組結果、排程狀態與下載連結。</p>
+                <p class="kicker">No Result Yet</p>
+                <h2 class="section-title">等待開始</h2>
+                <p class="muted">左側可以抽籤產生新賽程，也可以上傳已排好的賽程只安排裁判。</p>
               </div>
             </div>
             """,
@@ -603,40 +623,43 @@ def render_results_panel(latest_draw: dict[str, Any] | None) -> None:
 
     st.markdown(
         f"""
-        <p class="kicker">Latest Drop</p>
-        <h2 class="section-title">Draw Results</h2>
-        <p class="muted">抽籤時間：{latest_draw["drawn_at"]}<br>亂數函數：<code>{latest_draw["random_function"]}</code></p>
+        <p class="kicker">Latest Result</p>
+        <h2 class="section-title">目前結果</h2>
+        <p class="muted">建立時間：{latest_draw["drawn_at"]}<br>模式：<code>{latest_draw["random_function"]}</code></p>
         """,
         unsafe_allow_html=True,
     )
 
     metric_1, metric_2, metric_3 = st.columns(3)
     with metric_1:
-        st.markdown(f'<div class="metric"><strong>{latest_draw.get("team_count", len(latest_draw["teams"]))}</strong>Teams</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric"><strong>{latest_draw.get("team_count", len(latest_draw["teams"]))}</strong>隊伍</div>', unsafe_allow_html=True)
     with metric_2:
-        st.markdown(f'<div class="metric"><strong>{latest_draw.get("group_count", len(latest_draw["groups"]))}</strong>Groups</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric"><strong>{latest_draw.get("group_count", len(latest_draw["groups"]))}</strong>組數</div>', unsafe_allow_html=True)
     with metric_3:
         advancement = latest_draw.get("advancement", {})
-        st.markdown(f'<div class="metric"><strong>{advancement.get("total_advancers", "TBD")}</strong>Advance</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric"><strong>{advancement.get("total_advancers", "TBD")}</strong>晉級</div>', unsafe_allow_html=True)
 
     if advancement:
-        st.markdown(f'<p class="muted">晉級規則：{advancement["summary"]}</p>', unsafe_allow_html=True)
-        st.markdown(f'<p class="muted">淘汰賽格式：{advancement.get("knockout_stage") or latest_draw.get("knockout_format")}</p>', unsafe_allow_html=True)
+        if advancement.get("summary"):
+            st.markdown(f'<p class="muted">晉級規則：{advancement["summary"]}</p>', unsafe_allow_html=True)
+        if latest_draw.get("schedule_mode") != "existing_schedule":
+            st.markdown(f'<p class="muted">淘汰賽格式：{advancement.get("knockout_stage") or latest_draw.get("knockout_format")}</p>', unsafe_allow_html=True)
 
     schedule = latest_draw.get("schedule")
     if schedule:
         status_class = "infeasible" if schedule.get("status") != "scheduled" else ""
-        status_title = "Schedule ready" if schedule.get("status") == "scheduled" else "Schedule needs adjustment"
+        status_title = "賽程已就緒" if schedule.get("status") == "scheduled" else "賽程需要調整"
         messages = "".join(f"<div>{message}</div>" for message in schedule.get("messages", []))
         extra = ""
         if schedule.get("status") != "scheduled":
-            extra = "<div>可以放寬 DAY1/DAY2 最晚結束時間，或調整晉級隊數後重新抽籤。</div>"
+            extra = "<div>可以放寬 DAY1/DAY2 最晚結束時間，或調整晉級隊數後重新產生。</div>"
         st.markdown(
             f'<div class="status-box {status_class}"><strong>{status_title}</strong>{messages}{extra}</div>',
             unsafe_allow_html=True,
         )
 
-    render_groups(latest_draw["groups"])
+    if latest_draw.get("groups"):
+        render_groups(latest_draw["groups"])
     render_referee_panel(latest_draw, load_config(BASE_DIR))
 
     items = build_download_items(latest_draw)
@@ -655,7 +678,7 @@ def render_results_panel(latest_draw: dict[str, Any] | None) -> None:
     else:
         st.info("這次沒有選擇下載輸出。系統仍會保留內部抽籤紀錄。")
 
-    if st.button("Clear Current Result", use_container_width=True):
+    if st.button("清空目前結果", use_container_width=True):
         completed = clear_latest_artifacts(BASE_DIR)
         if completed:
             st.session_state["message"] = ("success", "已清空目前結果。")
@@ -674,7 +697,7 @@ def render_referee_panel(latest_draw: dict[str, Any], config: dict[str, Any]) ->
     st.markdown('<div class="referee-panel">', unsafe_allow_html=True)
     st.markdown(
         '<p class="kicker" style="margin-top:1rem;">Referee Setup</p>'
-        '<h2 class="section-title" style="font-size:2.2rem;">Assign Officials</h2>'
+        '<h2 class="section-title" style="font-size:2.2rem;">裁判排班</h2>'
         '<p class="muted">抽籤與賽程完成後，在這裡輸入裁判；每場會排 3 位，同時段不會重複安排同一人。</p>',
         unsafe_allow_html=True,
     )
@@ -688,7 +711,7 @@ def render_referee_panel(latest_draw: dict[str, Any], config: dict[str, Any]) ->
         st.session_state["referee_names_text"] = "\n".join(existing_referees)
 
     names_text = st.text_area(
-        "Referee Names",
+        "裁判名單",
         key="referee_names_text",
         help="一行一位裁判。輸入後頁面會重新整理出每位裁判的設定。",
     )
@@ -699,11 +722,12 @@ def render_referee_panel(latest_draw: dict[str, Any], config: dict[str, Any]) ->
         return
 
     match_options = build_match_options(latest_draw)
-    team_options = ["No affiliation"] + list(latest_draw.get("teams", []))
+    no_affiliation_label = "無所屬隊伍"
+    team_options = [no_affiliation_label] + list(latest_draw.get("teams", []))
     editor_rows = build_referee_editor_rows(names, existing_referees)
     editor_signature = hashlib.sha1((draw_key + "|" + "|".join(names)).encode("utf-8")).hexdigest()[:12]
 
-    st.caption("在表格的 Affiliated Team 欄位選擇裁判所屬隊伍；沒有隊伍就保持 No affiliation。Unavailable Matches 請輸入不能排的場次號，例如 1,2,13。")
+    st.caption("在表格的「所屬隊伍」欄位選擇裁判屬於哪隊；沒有隊伍就保持「無所屬隊伍」。不可排場次請輸入場次號，例如 1,2,13。")
     edited_rows = st.data_editor(
         editor_rows,
         key=f"referee_editor_{editor_signature}",
@@ -711,24 +735,24 @@ def render_referee_panel(latest_draw: dict[str, Any], config: dict[str, Any]) ->
         use_container_width=True,
         disabled=["name"],
         column_config={
-            "name": st.column_config.TextColumn("Name", width="medium"),
+            "name": st.column_config.TextColumn("姓名", width="medium"),
             "affiliated_team": st.column_config.SelectboxColumn(
-                "Affiliated Team",
+                "所屬隊伍",
                 options=team_options,
                 width="medium",
             ),
             "unavailable_match_nos": st.column_config.TextColumn(
-                "Unavailable Matches",
+                "不可排場次",
                 help="輸入場次號，逗號分隔，例如 1,2,13。",
                 width="large",
             ),
         },
     )
 
-    with st.expander("Match Number Reference", expanded=False):
+    with st.expander("場次號對照表", expanded=False):
         st.dataframe(build_match_reference_rows(match_options), hide_index=True, use_container_width=True)
 
-    submitted = st.button("Generate Referee Schedule", use_container_width=True)
+    submitted = st.button("產生裁判表", use_container_width=True)
 
     warnings = latest_draw.get("referee_warnings", [])
     if warnings:
@@ -774,7 +798,7 @@ def build_referee_editor_rows(names: list[str], existing_referees: dict[str, dic
         rows.append(
             {
                 "name": name,
-                "affiliated_team": existing.get("affiliated_team") or "No affiliation",
+                "affiliated_team": existing.get("affiliated_team") or "無所屬隊伍",
                 "unavailable_match_nos": ",".join(str(match_no) for match_no in unavailable),
             }
         )
@@ -791,7 +815,7 @@ def parse_referee_editor_rows(rows: Any) -> list[dict[str, Any]]:
         if not name:
             continue
         affiliated_team = str(row.get("affiliated_team", "")).strip()
-        if affiliated_team == "No affiliation":
+        if affiliated_team in {"No affiliation", "無所屬隊伍"}:
             affiliated_team = ""
         referees.append(
             {
@@ -806,7 +830,7 @@ def parse_referee_editor_rows(rows: Any) -> list[dict[str, Any]]:
 def build_match_reference_rows(match_options: dict[str, int]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for label, match_no in match_options.items():
-        rows.append({"Match No.": match_no, "Match": label})
+        rows.append({"場次": match_no, "比賽": label})
     return rows
 
 
@@ -822,11 +846,59 @@ def run_referee_assignment(referees: list[dict[str, Any]], config: dict[str, Any
             raise ValueError("線上版本尚未同步到最新裁判排班程式，請先在 Streamlit 按 Reboot / Redeploy。")
 
         updated_draw = update_draw_referees(latest_draw, referees, config=config)
+        if latest_draw.get("schedule_mode") == "existing_schedule":
+            cached_key = st.session_state.get("existing_schedule_template_drawn_at")
+            cached_bytes = st.session_state.get("existing_schedule_template_bytes")
+            if cached_key == latest_draw.get("drawn_at") and cached_bytes:
+                updated_draw["_existing_schedule_template_bytes"] = cached_bytes
         artifacts = generate_artifacts(updated_draw, base_dir=BASE_DIR)
         if artifacts.latest_sync_complete:
             st.session_state["message"] = ("success", "裁判排班已完成，Excel 已更新「裁判」工作表。")
         else:
             st.session_state["message"] = ("warning", "裁判排班已完成，但 latest 檔案同步可能被 Excel 開啟中擋住。")
+        st.rerun()
+    except Exception as exc:
+        st.session_state["message"] = ("error", str(exc))
+        st.rerun()
+
+
+def run_existing_schedule_referee_mode(schedule_file: Any, referee_names: str, config: dict[str, Any]) -> None:
+    try:
+        if schedule_file is None:
+            raise ValueError("請先上傳已排好的賽程 Excel。")
+
+        source_name = Path(PureWindowsPath(schedule_file.name).name).name
+        extension = Path(source_name).suffix.lower()
+        if extension not in ALLOWED_UPLOAD_EXTENSIONS:
+            raise ValueError("請上傳 .xlsx 或 .xlsm Excel 檔。")
+
+        payload = schedule_file.getvalue()
+        if not payload:
+            raise ValueError("上傳檔案是空的，請重新選擇 Excel。")
+
+        referees = [{"name": name} for name in parse_referee_names(referee_names)]
+        if not referees:
+            raise ValueError("請至少輸入一位裁判。")
+
+        create_referee_only_artifacts = getattr(tournament_tools, "create_referee_only_artifacts", None)
+        if create_referee_only_artifacts is None:
+            raise ValueError("線上版本尚未同步到既有賽程裁判模式，請先在 Streamlit 按 Reboot / Redeploy。")
+
+        draw_data, artifacts = create_referee_only_artifacts(
+            io.BytesIO(payload),
+            referees,
+            source_file=source_name,
+            config=config,
+            base_dir=BASE_DIR,
+        )
+        st.session_state["existing_schedule_template_bytes"] = payload
+        st.session_state["existing_schedule_template_drawn_at"] = draw_data.get("drawn_at", "")
+        st.session_state["referee_names_text"] = "\n".join(referee["name"] for referee in draw_data.get("referees", []))
+        st.session_state["referee_names_drawn_at"] = draw_data.get("drawn_at", "")
+        if artifacts.latest_sync_complete:
+            st.session_state["message"] = ("success", "已讀取既有賽程並產生裁判表，右側可繼續微調裁判設定。")
+        else:
+            st.session_state["message"] = ("warning", "已讀取既有賽程，但 latest 檔案同步可能被 Excel 開啟中擋住。")
         st.rerun()
     except Exception as exc:
         st.session_state["message"] = ("error", str(exc))
@@ -912,9 +984,9 @@ def load_fallback_teams() -> tuple[list[str], str | None]:
 
 def build_download_items(latest_draw: dict[str, Any]) -> list[dict[str, Any]]:
     labels = {
-        "json": "Download JSON",
-        "schedule": "Download Excel",
-        "pdf": "Download PDF",
+        "json": "下載 JSON",
+        "schedule": "下載 Excel",
+        "pdf": "下載 PDF",
     }
     mime_types = {
         "json": "application/json",

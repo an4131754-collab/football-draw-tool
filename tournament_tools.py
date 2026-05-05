@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import math
 import secrets
@@ -60,6 +61,29 @@ GROUP_MATCH_ORDERS = {
     "C": ((0, 1), (1, 2), (2, 0)),
     "D": ((0, 1), (1, 2), (2, 0)),
 }
+
+TEMPLATE_SCHEDULE_MATCH_CELLS = (
+    {"day": "DAY1", "time_cell": "A4", "match_cell": "B4", "field": "甲", "group_cell": "C4", "home_cell": "D4", "away_cell": "E4"},
+    {"day": "DAY1", "time_cell": "A4", "match_cell": "G4", "field": "乙", "group_cell": "H4", "home_cell": "I4", "away_cell": "J4"},
+    {"day": "DAY1", "time_cell": "A5", "match_cell": "B5", "field": "甲", "group_cell": "C5", "home_cell": "D5", "away_cell": "E5"},
+    {"day": "DAY1", "time_cell": "A5", "match_cell": "G5", "field": "乙", "group_cell": "H5", "home_cell": "I5", "away_cell": "J5"},
+    {"day": "DAY1", "time_cell": "A6", "match_cell": "B6", "field": "甲", "group_cell": "C6", "home_cell": "D6", "away_cell": "E6"},
+    {"day": "DAY1", "time_cell": "A6", "match_cell": "G6", "field": "乙", "group_cell": "H6", "home_cell": "I6", "away_cell": "J6"},
+    {"day": "DAY1", "time_cell": "A7", "match_cell": "B7", "field": "甲", "group_cell": "C7", "home_cell": "D7", "away_cell": "E7"},
+    {"day": "DAY1", "time_cell": "A7", "match_cell": "G7", "field": "乙", "group_cell": "H7", "home_cell": "I7", "away_cell": "J7"},
+    {"day": "DAY1", "time_cell": "A8", "match_cell": "B8", "field": "甲", "group_cell": "C8", "home_cell": "D8", "away_cell": "E8"},
+    {"day": "DAY1", "time_cell": "A8", "match_cell": "G8", "field": "乙", "group_cell": "H8", "home_cell": "I8", "away_cell": "J8"},
+    {"day": "DAY1", "time_cell": "A9", "match_cell": "B9", "field": "甲", "group_cell": "C9", "home_cell": "D9", "away_cell": "E9"},
+    {"day": "DAY1", "time_cell": "A9", "match_cell": "G9", "field": "乙", "group_cell": "H9", "home_cell": "I9", "away_cell": "J9"},
+    {"day": "DAY2", "time_cell": "A14", "match_cell": "B14", "field": "甲", "group_cell": "", "home_cell": "D14", "away_cell": "E14"},
+    {"day": "DAY2", "time_cell": "A14", "match_cell": "G14", "field": "乙", "group_cell": "", "home_cell": "I14", "away_cell": "J14"},
+    {"day": "DAY2", "time_cell": "A15", "match_cell": "B15", "field": "甲", "group_cell": "", "home_cell": "D15", "away_cell": "E15"},
+    {"day": "DAY2", "time_cell": "A15", "match_cell": "G15", "field": "乙", "group_cell": "", "home_cell": "I15", "away_cell": "J15"},
+    {"day": "DAY2", "time_cell": "A17", "match_cell": "B17", "field": "甲", "group_cell": "", "home_cell": "D17", "away_cell": "E17"},
+    {"day": "DAY2", "time_cell": "A17", "match_cell": "G17", "field": "乙", "group_cell": "", "home_cell": "I17", "away_cell": "J17"},
+    {"day": "DAY2", "time_cell": "A18", "match_cell": "B18", "field": "甲", "group_cell": "", "home_cell": "D18", "away_cell": "E18"},
+    {"day": "DAY2", "time_cell": "A18", "match_cell": "G18", "field": "乙", "group_cell": "", "home_cell": "I18", "away_cell": "J18"},
+)
 
 PREFERRED_REGISTRATION_NAMES = (
     "114學年度足球⚽️系際盃 (回覆).xlsx",
@@ -498,6 +522,323 @@ def update_draw_referees(
     updated["referee_warnings"] = warnings
     updated["referees_per_match"] = int(config.get("referees_per_match", 3))
     return updated
+
+
+def create_referee_only_artifacts(
+    schedule_source: Path | str | BinaryIO,
+    referees: list[Any] | dict[str, Any] | str,
+    *,
+    source_file: str = "uploaded_schedule.xlsx",
+    config: dict[str, Any] | None = None,
+    base_dir: Path = BASE_DIR,
+) -> tuple[dict[str, Any], ArtifactPaths]:
+    config = config or load_config(base_dir)
+    template_bytes = None
+    if not isinstance(schedule_source, (str, Path)) and hasattr(schedule_source, "read"):
+        current_position = schedule_source.tell() if hasattr(schedule_source, "tell") else None
+        template_bytes = schedule_source.read()
+        if hasattr(schedule_source, "seek"):
+            schedule_source.seek(current_position or 0)
+
+    draw_data = load_existing_schedule_draw_data(schedule_source, source_file, config)
+    template_copy = schedule_source if isinstance(schedule_source, (str, Path)) else None
+    if template_copy is not None:
+        draw_data["_existing_schedule_template_path"] = str(Path(template_copy).resolve())
+    elif template_bytes is not None:
+        draw_data["_existing_schedule_template_bytes"] = template_bytes
+    draw_data = update_draw_referees(draw_data, referees, config=config)
+    artifacts = generate_artifacts(draw_data, base_dir=base_dir)
+    return draw_data, artifacts
+
+
+def load_existing_schedule_draw_data(
+    schedule_source: Path | str | BinaryIO,
+    source_file: str,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    workbook = load_workbook(schedule_source, data_only=False)
+    matches = read_existing_schedule_matches(workbook, config)
+    if not matches:
+        raise ValueError("無法從這份 Excel 讀到賽程。請確認格式接近 113/114 賽程表，或包含工具產生的「賽程」工作表。")
+
+    fields = list(config.get("fields", []))
+    field_order = {field: index for index, field in enumerate(fields)}
+    matches = sorted(matches, key=lambda match: match_sort_key(match, field_order))
+    teams = sorted(
+        {
+            str(value).strip()
+            for match in matches
+            for value in (match.get("home"), match.get("away"))
+            if is_real_team_name(value)
+        }
+    )
+
+    schedule = {
+        "status": "scheduled",
+        "messages": [f"已從既有賽程讀取 {len(matches)} 場比賽，僅進行裁判排班。"],
+        "warnings": [],
+        "constraints": {
+            "fields": fields,
+            "match_duration_minutes": int(config.get("match_duration_minutes", 45)),
+            "source": "existing_schedule",
+        },
+        "day_slots": summarize_match_time_slots(matches, fields),
+        "match_count": len(matches),
+        "matches": matches,
+    }
+
+    return {
+        "drawn_at": datetime.now().isoformat(timespec="seconds"),
+        "source_file": source_file,
+        "team_count": len(teams),
+        "group_count": 0,
+        "teams": teams,
+        "slot_order": [],
+        "slots": {},
+        "groups": {},
+        "advancement": {
+            "advance_per_group": 0,
+            "wildcard_count": 0,
+            "total_advancers": 0,
+            "summary": "既有賽程裁判排班模式，不重新抽籤或安排晉級。",
+            "placeholders": [],
+        },
+        "knockout_format": "existing_schedule",
+        "schedule_mode": "existing_schedule",
+        "download_options": normalize_download_options({"json": True, "schedule": True, "pdf": False}),
+        "random_function": "not_used_for_existing_schedule",
+        "random_source": "既有賽程裁判排班模式未使用抽籤亂數。",
+        "schedule": schedule,
+    }
+
+
+def read_existing_schedule_matches(workbook: Any, config: dict[str, Any]) -> list[dict[str, Any]]:
+    for sheet in workbook.worksheets:
+        dynamic_matches = read_dynamic_schedule_sheet(sheet, config)
+        if dynamic_matches:
+            return dynamic_matches
+
+    for sheet in workbook.worksheets:
+        template_matches = read_template_schedule_sheet(sheet, config)
+        if template_matches:
+            return template_matches
+
+    return []
+
+
+def read_dynamic_schedule_sheet(sheet: Any, config: dict[str, Any]) -> list[dict[str, Any]]:
+    header_row = None
+    for row_index in range(1, min(sheet.max_row, 25) + 1):
+        values = [normalize_header_text(sheet.cell(row_index, column).value) for column in range(1, min(sheet.max_column, 12) + 1)]
+        if any(value in {"match", "matchno", "matchnumber", "場次"} for value in values) and any(value in {"day", "日期", "天"} for value in values):
+            header_row = row_index
+            break
+
+    if header_row is None:
+        return []
+
+    headers = {
+        normalize_header_text(sheet.cell(header_row, column).value): column
+        for column in range(1, min(sheet.max_column, 20) + 1)
+        if sheet.cell(header_row, column).value is not None
+    }
+
+    def col(*names: str) -> int | None:
+        for name in names:
+            normalized = normalize_header_text(name)
+            if normalized in headers:
+                return headers[normalized]
+        return None
+
+    match_col = col("場次", "match", "matchno", "matchnumber")
+    day_col = col("日期", "day")
+    time_col = col("時間", "time")
+    field_col = col("場地", "field")
+    stage_col = col("階段", "stage")
+    group_col = col("組別", "group")
+    home_col = col("主隊", "隊伍1", "home", "home/label", "主隊/占位")
+    away_col = col("客隊", "隊伍2", "away", "away/label", "客隊/占位")
+
+    required = [match_col, day_col, time_col, field_col, home_col, away_col]
+    if any(value is None for value in required):
+        return []
+
+    field_order = {field: index for index, field in enumerate(config.get("fields", []))}
+    matches: list[dict[str, Any]] = []
+    time_indexes: dict[tuple[str, str], int] = {}
+    for row_index in range(header_row + 1, sheet.max_row + 1):
+        match_no = parse_int_or_none(sheet.cell(row_index, match_col).value)
+        if match_no is None:
+            continue
+        day = str(sheet.cell(row_index, day_col).value or "").strip()
+        time_label = normalize_time_label(str(sheet.cell(row_index, time_col).value or "").strip())
+        field = str(sheet.cell(row_index, field_col).value or "").strip()
+        home = str(sheet.cell(row_index, home_col).value or "").strip()
+        away = str(sheet.cell(row_index, away_col).value or "").strip()
+        if not day or not time_label or not field or not home or not away:
+            continue
+        key = (day, time_label)
+        if key not in time_indexes:
+            time_indexes[key] = len({item[1] for item in time_indexes if item[0] == day})
+        matches.append(
+            build_existing_match(
+                match_no=match_no,
+                day=day,
+                time=time_label,
+                time_index=time_indexes[key],
+                field=field,
+                stage=str(sheet.cell(row_index, stage_col).value or "") if stage_col else "",
+                group=str(sheet.cell(row_index, group_col).value or "") if group_col else "",
+                home=home,
+                away=away,
+            )
+        )
+
+    return sorted(matches, key=lambda match: match_sort_key(match, field_order))
+
+
+def read_template_schedule_sheet(sheet: Any, config: dict[str, Any]) -> list[dict[str, Any]]:
+    field_order = {field: index for index, field in enumerate(config.get("fields", []))}
+    time_indexes: dict[tuple[str, str], int] = {}
+    matches: list[dict[str, Any]] = []
+    for cell_map in TEMPLATE_SCHEDULE_MATCH_CELLS:
+        match_no = parse_int_or_none(sheet[cell_map["match_cell"]].value)
+        home = str(sheet[cell_map["home_cell"]].value or "").strip()
+        away = str(sheet[cell_map["away_cell"]].value or "").strip()
+        time_label = normalize_time_label(str(sheet[cell_map["time_cell"]].value or "").strip())
+        if match_no is None or (not home and not away) or not time_label:
+            continue
+        day = cell_map["day"]
+        key = (day, time_label)
+        if key not in time_indexes:
+            time_indexes[key] = len({item[1] for item in time_indexes if item[0] == day})
+        group = str(sheet[cell_map["group_cell"]].value or "").strip() if cell_map["group_cell"] else ""
+        matches.append(
+            build_existing_match(
+                match_no=match_no,
+                day=day,
+                time=time_label,
+                time_index=time_indexes[key],
+                field=cell_map["field"],
+                stage=infer_stage_from_match_no(match_no),
+                group=group,
+                home=home,
+                away=away,
+            )
+        )
+
+    return sorted(matches, key=lambda match: match_sort_key(match, field_order))
+
+
+def build_existing_match(
+    *,
+    match_no: int,
+    day: str,
+    time: str,
+    time_index: int,
+    field: str,
+    stage: str,
+    group: str,
+    home: str,
+    away: str,
+) -> dict[str, Any]:
+    return {
+        "match_no": match_no,
+        "day": day,
+        "time": time,
+        "time_index": time_index,
+        "field": field,
+        "stage": stage or infer_stage_from_match_no(match_no),
+        "stage_code": infer_stage_code(stage, match_no),
+        "group": group,
+        "home": home,
+        "away": away,
+        "home_label": home,
+        "away_label": away,
+        "note": "",
+    }
+
+
+def summarize_match_time_slots(matches: list[dict[str, Any]], fields: list[str]) -> dict[str, list[dict[str, Any]]]:
+    day_slots: dict[str, dict[tuple[int, str], dict[str, Any]]] = {}
+    for match in matches:
+        day = str(match.get("day", ""))
+        key = (int(match.get("time_index", 0)), str(match.get("time", "")))
+        day_slots.setdefault(day, {})
+        day_slots[day].setdefault(
+            key,
+            {
+                "day": day,
+                "time_index": key[0],
+                "time": key[1],
+                "fields": [],
+            },
+        )
+        field = match.get("field", "")
+        if field and field not in day_slots[day][key]["fields"]:
+            day_slots[day][key]["fields"].append(field)
+
+    result: dict[str, list[dict[str, Any]]] = {}
+    for day, slots in day_slots.items():
+        result[day] = []
+        for key in sorted(slots):
+            item = slots[key]
+            if fields:
+                item["fields"] = sorted(item["fields"], key=lambda field: fields.index(field) if field in fields else 99)
+            result[day].append(item)
+    return result
+
+
+def normalize_header_text(value: Any) -> str:
+    return str(value or "").strip().lower().replace(" ", "").replace("_", "").replace("#", "")
+
+
+def parse_int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_time_label(value: str) -> str:
+    return value.replace("–", "-").replace("—", "-").strip()
+
+
+def infer_stage_from_match_no(match_no: int) -> str:
+    if match_no <= 12:
+        return "小組賽"
+    if match_no <= 16:
+        return "淘汰賽"
+    if match_no <= 18:
+        return "四強"
+    return "決賽"
+
+
+def infer_stage_code(stage: str, match_no: int) -> str:
+    stage_text = str(stage or "")
+    if "小組" in stage_text or match_no <= 12:
+        return "group"
+    if "季" in stage_text:
+        return "third_place"
+    if "冠" in stage_text or "決" in stage_text or match_no >= 19:
+        return "final"
+    if "四" in stage_text or match_no in {17, 18}:
+        return "semifinal"
+    return "knockout"
+
+
+def is_real_team_name(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    marker_tokens = ("勝", "敗", "W", "L", "Best", "季殿", "冠亞")
+    if any(token in text for token in marker_tokens):
+        return False
+    if len(text) <= 3 and text[0].isalpha() and any(ch.isdigit() for ch in text):
+        return False
+    return True
 
 
 def normalize_referees(referees: list[Any] | dict[str, Any] | str, teams: list[str]) -> list[dict[str, Any]]:
@@ -1419,6 +1760,11 @@ def validate_draw_data(draw_data: dict[str, Any]) -> None:
         missing_list = ", ".join(sorted(missing_keys))
         raise ValueError(f"抽籤結果缺少必要欄位：{missing_list}")
 
+    if draw_data.get("schedule_mode") == "existing_schedule":
+        if not draw_data.get("schedule", {}).get("matches"):
+            raise ValueError("既有賽程模式缺少比賽資料。")
+        return
+
     groups = draw_data["groups"]
     if not isinstance(groups, dict) or not groups:
         raise ValueError("抽籤結果沒有分組資料。")
@@ -1524,7 +1870,7 @@ def generate_artifacts(
     latest_schedule_path = latest_dir / artifact_filenames["schedule"] if draw_data["download_options"]["schedule"] else None
     latest_pdf_path = latest_dir / artifact_filenames["pdf"] if draw_data["download_options"]["pdf"] else None
 
-    write_draw_result(draw_data, draw_json_path)
+    write_draw_result(clean_draw_data_for_json(draw_data), draw_json_path)
     json_synced = sync_latest_copy(draw_json_path, latest_draw_json_path)
     schedule_synced = True
     pdf_synced = True
@@ -1561,6 +1907,10 @@ def make_timestamp_dirname(timestamp_text: str) -> str:
 def write_draw_result(draw_data: dict[str, Any], draw_json_path: Path) -> None:
     with draw_json_path.open("w", encoding="utf-8") as file_handle:
         json.dump(draw_data, file_handle, ensure_ascii=False, indent=2)
+
+
+def clean_draw_data_for_json(draw_data: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in draw_data.items() if not key.startswith("_")}
 
 
 def sync_latest_copy(source_path: Path, target_path: Path) -> bool:
@@ -1617,12 +1967,32 @@ def build_schedule_output(
     config: dict[str, Any],
     base_dir: Path,
 ) -> None:
+    if draw_data.get("schedule_mode") == "existing_schedule":
+        build_existing_schedule_workbook(draw_data, output_path, config)
+        return
+
     if draw_data.get("schedule_mode") == "template_schedule":
         template_path = resolve_template_path(base_dir)
         build_template_schedule_workbook(draw_data, template_path, output_path, config)
         return
 
     build_dynamic_schedule_workbook(draw_data, output_path, config)
+
+
+def build_existing_schedule_workbook(draw_data: dict[str, Any], output_path: Path, config: dict[str, Any]) -> None:
+    template_path_text = draw_data.get("_existing_schedule_template_path")
+    if template_path_text and Path(template_path_text).exists():
+        workbook = load_workbook(Path(template_path_text))
+    elif draw_data.get("_existing_schedule_template_bytes"):
+        workbook = load_workbook(io.BytesIO(draw_data["_existing_schedule_template_bytes"]))
+    else:
+        workbook = Workbook()
+        schedule_sheet = workbook.active
+        schedule_sheet.title = "賽程"
+        write_schedule_sheet(schedule_sheet, draw_data)
+
+    write_referee_sheet_if_needed(workbook, draw_data, config)
+    workbook.save(output_path)
 
 
 def build_template_schedule_workbook(
