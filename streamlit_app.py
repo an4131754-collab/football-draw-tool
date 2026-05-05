@@ -510,14 +510,20 @@ def render_setup_panel(config: dict[str, Any], latest_draw: dict[str, Any] | Non
     latest_constraints = latest_schedule.get("constraints", {})
     latest_download_options = normalize_download_options(latest_draw.get("download_options") if latest_draw else None)
 
+    # Existing-schedule referee mode stores group_count=0 because no draw is created.
+    # Do not reuse that metadata as defaults for the normal draw form.
+    reuse_draw_defaults = bool(latest_draw and latest_draw.get("schedule_mode") != "existing_schedule")
     defaults = {
-        "group_count": int(latest_draw.get("group_count", config["default_group_count"])) if latest_draw else int(config["default_group_count"]),
-        "advance_per_group": int(latest_draw.get("advancement", {}).get("advance_per_group", config["default_advance_per_group"])) if latest_draw else int(config["default_advance_per_group"]),
-        "wildcard_count": int(latest_draw.get("advancement", {}).get("wildcard_count", config["default_wildcard_count"])) if latest_draw else int(config["default_wildcard_count"]),
-        "knockout_format": latest_draw.get("knockout_format", config.get("default_knockout_format", "semifinal")) if latest_draw else config.get("default_knockout_format", "semifinal"),
-        "day1_latest_end": latest_constraints.get("day1_latest_end", config["default_day1_latest_end"]),
-        "day2_latest_end": latest_constraints.get("day2_latest_end", config["default_day2_latest_end"]),
+        "group_count": int(latest_draw.get("group_count", config["default_group_count"])) if reuse_draw_defaults else int(config["default_group_count"]),
+        "advance_per_group": int(latest_draw.get("advancement", {}).get("advance_per_group", config["default_advance_per_group"])) if reuse_draw_defaults else int(config["default_advance_per_group"]),
+        "wildcard_count": int(latest_draw.get("advancement", {}).get("wildcard_count", config["default_wildcard_count"])) if reuse_draw_defaults else int(config["default_wildcard_count"]),
+        "knockout_format": latest_draw.get("knockout_format", config.get("default_knockout_format", "semifinal")) if reuse_draw_defaults else config.get("default_knockout_format", "semifinal"),
+        "day1_latest_end": latest_constraints.get("day1_latest_end", config["default_day1_latest_end"]) if reuse_draw_defaults else config["default_day1_latest_end"],
+        "day2_latest_end": latest_constraints.get("day2_latest_end", config["default_day2_latest_end"]) if reuse_draw_defaults else config["default_day2_latest_end"],
     }
+    defaults["group_count"] = min(max(defaults["group_count"], 2), int(config["max_group_count"]))
+    defaults["advance_per_group"] = max(defaults["advance_per_group"], 1)
+    defaults["wildcard_count"] = max(defaults["wildcard_count"], 0)
 
     st.markdown('<div class="lux-panel">', unsafe_allow_html=True)
     st.markdown(
