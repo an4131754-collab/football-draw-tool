@@ -7,18 +7,17 @@ from typing import Any
 
 import streamlit as st
 
+import tournament_tools
 from tournament_tools import (
     BASE_DIR,
     clear_latest_artifacts,
     create_draw_artifacts,
-    generate_artifacts,
     get_artifact_filenames,
     get_latest_draw_data,
     load_config,
     load_teams,
     normalize_download_options,
     resolve_registration_path,
-    update_draw_referees,
 )
 
 ALLOWED_UPLOAD_EXTENSIONS = {".xlsx", ".xlsm"}
@@ -816,6 +815,12 @@ def run_referee_assignment(referees: list[dict[str, Any]], config: dict[str, Any
         latest_draw = get_latest_draw_data(BASE_DIR)
         if latest_draw is None:
             raise ValueError("尚未有抽籤結果，請先完成抽籤。")
+
+        update_draw_referees = getattr(tournament_tools, "update_draw_referees", None)
+        generate_artifacts = getattr(tournament_tools, "generate_artifacts", None)
+        if update_draw_referees is None or generate_artifacts is None:
+            raise ValueError("線上版本尚未同步到最新裁判排班程式，請先在 Streamlit 按 Reboot / Redeploy。")
+
         updated_draw = update_draw_referees(latest_draw, referees, config=config)
         artifacts = generate_artifacts(updated_draw, base_dir=BASE_DIR)
         if artifacts.latest_sync_complete:
